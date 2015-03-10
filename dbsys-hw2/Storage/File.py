@@ -273,7 +273,7 @@ class StorageFile:
           self.binrepr     = Struct("H"+str(FileId.binrepr.size)+"s"+str(len(self.path))+"s")
           self.freePages   = set()
           
-          page = self.pageClass()(pageId=self.pageId(0), buffer=bytes(self.pageSize()f), schema=self.schema())
+          page = self.pageClass()(pageId=self.pageId(0), buffer=bytes(self.pageSize()), schema=self.schema())
           self.pageHdrSize = page.header.headerSize()
 
           if initFreePages:
@@ -337,7 +337,7 @@ class StorageFile:
     return self.header.pageClass
 
   def numPages(self):
-    s
+    return math.floor((self.size() - self.headerSize()) / self.pageSize())
 
   def pageOffset(self, pageId):
     return self.headerSize() + self.pageSize() * pageId.pageIndex
@@ -399,8 +399,9 @@ class StorageFile:
     if isinstance(page, self.pageClass()):
       self.file.seek(self.pageOffset(page.pageId))
       self.file.write(page.pack())
-      
-      if(not page.header.hasFreeTuple()):
+      # Refresh the free page list based on the in-memory header contents.
+      # This is needed if the page has been directly modified while resident in the buffer pool.
+      if not page.header.hasFreeTuple():
         self.freePages.discard(page.pageId)
     else:
       raise ValueError("Incompatible page type during writePage")

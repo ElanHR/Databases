@@ -534,6 +534,5 @@ class PageTupleIterator:
       raise StopIteration
 
 if __name__ == "__main__":
-    print('hi')
     import doctest
     doctest.testmod()

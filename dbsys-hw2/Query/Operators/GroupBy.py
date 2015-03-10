@@ -90,10 +90,6 @@ class GroupBy(Operator):
     self.initializeOutput()
     # outputPage = self.outputPages[0]
 
-    # initialize each partition
-    # for tup in outputPage:
-    #   tup = self.aggExprs[0]
-
     groupDict = dict()
     # Process all pages from the child operator.
     try:
@@ -105,33 +101,41 @@ class GroupBy(Operator):
           # aggregate = lambda( aggreSchema(tuple) )
           # (Partition, Group) = aggragate
 
+
+          # insertTuple,
+          # deleteTuple
+          # updateTuple
+
+          # group value
           groupVals = self.loadSchema(self.groupSchema, inputTuple)
-          aggVals = self.loadSchema(self.aggSchema, inputTuple)
+          # partition 
           partition = self.groupHashFn(groupVals)
+          # tuple values involved in aggregate
+          aggVals = self.loadSchema(self.aggSchema, inputTuple)
 
+          key = (partition,groupVals)
 
-          self.storage.getIndex(partition)
-          # # initialize if this is the first we've seen
-          # if key not in groupDict: 
-          #   groupDict[key] = self.aggExprs[0]
+          # self.storage.getIndex(partition)
 
-          # curVal = groupDict[key]
-          # groupDict[key] = self.aggExprs[1](curVal, aggVals)
+          # initialize if this is the first we've seen this group
+          if key not in groupDict: 
+            groupDict[key] = self.aggExprs[0]
 
-          outputTuple = self.aggSchema.instantiate(*[self.joinExprEnv[f] for f in   self.aggSchema.fields])
-
-          self.emitOutputTuple(self.joinSchema.pack(outputTuple))
+          curVal = groupDict[key]
+          groupDict[key] = self.aggExprs[1](curVal, aggVals)
   
     except StopIteration:
       pass
 
-    for val in groupDict:
-      val =self.aggExprs[2](tup)
+    for k,v in groupDict.iteritems():
+      outputTuple = self.outputSchema.instantiate(k,v)
+      self.emitOutputTuple(self.outputSchema.pack(outputTuple))
+
+    if self.outputPages:
+      self.outputPages = [self.outputPages[-1]]
 
     # Return an iterator to the output relation
     return self.storage.pages(self.relationId())
-
-    raise NotImplementedError
 
 
   # Plan and statistics information
