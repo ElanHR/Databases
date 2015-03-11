@@ -1,6 +1,6 @@
 from Catalog.Schema import DBSchema
 from Query.Operator import Operator
-
+import itertools
 class Union(Operator):
   def __init__(self, lhsPlan, rhsPlan, **kwargs):
     super().__init__(**kwargs)
@@ -33,22 +33,62 @@ class Union(Operator):
   # The iterator must be set up to deal with input iterators and handle both pipelined and
   # non-pipelined cases
   def __iter__(self):
-    raise NotImplementedError
+    self.initializeOutput()
+    self.inputIterator = itertools.chain(self.lhsPlan, self.rhsPlan)
+    self.inputFinished = False
+
+    if not self.pipelined:
+      self.outputIterator = self.processAllPages()
+
+    return self
 
   # Method used for iteration, doing work in the process. Handle pipelined and non-pipelined cases
   def __next__(self):
-    raise NotImplementedError
+    if self.pipelined:
+      while not(self.inputFinished or self.isOutputPageReady()):
+        try:
+          pageId, page = next(self.inputIterator)
+          self.processInputPage(pageId, page)
+        except StopIteration:
+          self.inputFinished = True
+
+      return self.outputPage()
+
+    else:
+      return next(self.outputIterator)
 
   # Page processing and control methods
 
   # Page-at-a-time operator processing
   # For union all, this copies over the input tuple to the output
   def processInputPage(self, pageId, page):
-    raise NotImplementedError
+    schema = self.schema()
+    for inputTuple in page:
+      # Load tuple fields into the select expression context
+      self.emitOutputTuple(inputTuple)
+    
 
   # Set-at-a-time operator processing
   def processAllPages(self):
-    raise NotImplementedError
+    if self.inputIterator is None:
+      self.inputIterator = iter(self.subPlan)
+
+    # Process all pages from the child operator.
+    try:
+      for (pageId, page) in self.inputIterator:
+        self.processInputPage(pageId, page)
+
+        # No need to track anything but the last output page when in batch mode.
+        if self.outputPages:
+          self.outputPages = [self.outputPages[-1]]
+
+    # To support pipelined operation, processInputPage may raise a
+    # StopIteration exception during its work. We catch this and ignore in batch mode.
+    except StopIteration:
+      pass
+
+    # Return an iterator to the output relation
+    return self.storage.pages(self.relationId())
 
   # Plan and statistics information
 
