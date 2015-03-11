@@ -68,14 +68,18 @@ class GroupBy(Operator):
   def inputs(self):
     return [self.subPlan]
 
-  # Iterator abstraction for selection operator.
+  # Iterator abstraction for groupBy operator.
   def __iter__(self):
+    self.initializeOutput()
+    self.inputIterator = iter(self.subPlan)
+    self.inputFinished = False
 
-    raise NotImplementedError
+    self.outputIterator = self.processAllPages()
+
+    return self
 
   def __next__(self):
-
-    raise NotImplementedError
+    return next(self.outputIterator)
 
 
   # Page-at-a-time operator processing
@@ -107,28 +111,63 @@ class GroupBy(Operator):
           # updateTuple
 
           # group value
-          groupVals = self.loadSchema(self.groupSchema, inputTuple)
+          groupVals = self.subSchema.projectBinary(inputTuple, self.groupSchema)
+          # groupVals = self.groupSchema.unpack(groupVals)
+
           # partition 
           partition = self.groupHashFn(groupVals)
+          
           # tuple values involved in aggregate
-          aggVals = self.loadSchema(self.aggSchema, inputTuple)
+          # aggVals   = self.subSchema.projectBinary(inputTuple, self.aggSchema)
+          curInVal = self.subSchema.unpack(inputTuple)
 
           key = (partition,groupVals)
 
           # self.storage.getIndex(partition)
 
           # initialize if this is the first we've seen this group
-          if key not in groupDict: 
-            groupDict[key] = self.aggExprs[0]
+          if key not in groupDict:
+            # print('',key,' is not in dict! Initializing...')
+            curAggVal = self.aggSchema.instantiate( *[ e[0] for e in self.aggExprs ])
+          else:
+            curAggVal = self.aggSchema.unpack( groupDict[key] )
+ 
+          print('Key: ', self.groupSchema.unpack(key[1]) )
+          print('Old Val: ', curAggVal )
+          # import pdb
+          # pdb.set_trace()
 
-          curVal = groupDict[key]
-          groupDict[key] = self.aggExprs[1](curVal, aggVals)
+
+          #for each lambda expression...
+          groupDict[key] = self.aggSchema.pack( self.aggSchema.instantiate(\
+            *[ self.aggExprs[i][1](curAggVal[i], curInVal) for i in range(len(self.aggExprs))]))
+
+          print('New Val: ', self.aggSchema.unpack(groupDict[key]) )
   
     except StopIteration:
       pass
 
-    for k,v in groupDict.iteritems():
-      outputTuple = self.outputSchema.instantiate(k,v)
+    print('outputSchema: ', self.outputSchema.toString())
+    for k,v in groupDict.items():
+      # print('K: ', k, '\tV:',v)
+      
+
+      # Run final aggregate lambda
+      curVal = self.aggSchema.unpack(v)
+      # print('curVal: ',curVal)
+      finalVal = self.aggSchema.instantiate(\
+            *[ self.aggExprs[i][2](curVal[i]) for i in range(len(self.aggExprs))])
+      # print('finalVal: ',finalVal)
+      v = self.aggSchema.pack( finalVal )
+
+      # Create output tuples
+      output = self.loadSchema(self.groupSchema, k[1])
+      output.update(self.loadSchema(self.aggSchema, v))
+
+      outputTuple = self.outputSchema.instantiate(*[output[f] for f in self.outputSchema.fields])
+
+      print(outputTuple)
+
       self.emitOutputTuple(self.outputSchema.pack(outputTuple))
 
     if self.outputPages:
