@@ -131,9 +131,17 @@ class PlanBuilder:
   >>> db.createRelation('employee', [('id', 'int'), ('age', 'int')])
   >>> schema = db.relationSchema('employee')
 
+  >>> keySchema  = DBSchema('employeeKey',  [('id', 'int')])
+  >>> indexId = db.storageEngine().fileMgr.createIndex(schema.name, schema, keySchema, True)
+
+  >>> db.storageEngine().fileMgr.hasIndex(schema.name, keySchema)
+  True
+
   # Populate relation
-  >>> for tup in [schema.pack(schema.instantiate(i, 2*i+20)) for i in range(20)]:
-  ...    _ = db.insertTuple(schema.name, tup)
+  >>> tupId = []
+  >>> insertedTuples = [schema.pack(schema.instantiate(i, 2*i+20)) for i in range(20)]
+  >>> for tup in insertedTuples:
+  ...    tupId.append(db.insertTuple(schema.name, tup))
   ...
 
   ### SELECT * FROM Employee WHERE age < 30
@@ -193,7 +201,7 @@ class PlanBuilder:
   ### Hash join test with the same query.
   ### SELECT * FROM Employee E1 JOIN Employee E2 ON E1.id = E2.id
   >>> e2schema   = schema.rename('employee2', {'id':'id2', 'age':'age2'})
-  >>> keySchema  = DBSchema('employeeKey',  [('id', 'int')])
+
   >>> keySchema2 = DBSchema('employeeKey2', [('id2', 'int')])
   
   >>> query5 = db.query().fromTable('employee').join( \
@@ -213,6 +221,31 @@ class PlanBuilder:
   >>> sorted([(tup.id, tup.id2) for tup in q5results]) # doctest:+ELLIPSIS
   [(0, 0), (1, 1), (2, 2), ..., (18, 18), (19, 19)]
 
+  ### Index join test with the same query.
+  >>> db.storageEngine().fileMgr.hasIndex(schema.name, keySchema)
+  True
+  
+  >>> indexId
+  1
+  >>> 
+  
+  ### SELECT * FROM Employee E1 JOIN Employee E2 ON E1.id = E2.id
+  
+  >>> query8 = db.query().fromTable('employee').join( \
+          db.query().fromTable('employee'), \
+          rhsSchema=e2schema, \
+          method='indexed',lhsKeySchema=keySchema, indexId=indexId).finalize()
+  
+  >>> print(query8.explain()) # doctest: +ELLIPSIS
+  IndexJoin[16,cost=1000000.00](indexKeySchema=employeeKey[(id,int)])
+    TableScan[15,cost=1000.00](employee)
+    TableScan[14,cost=1000.00](employee)
+
+  >>> q8results = [query8.schema().unpack(tup) for page in db.processQuery(query8) for tup in page[1]]
+  >>> sorted([(tup.id, tup.id2) for tup in q8results]) # doctest:+ELLIPSIS
+  [(0, 0), (1, 1), (2, 2), ..., (18, 18), (19, 19)]
+
+  
   ### Group by aggregate query
   ### SELECT id, max(age) FROM Employee GROUP BY id
   >>> aggMinMaxSchema = DBSchema('minmax', [('minAge', 'int'), ('maxAge','int')])

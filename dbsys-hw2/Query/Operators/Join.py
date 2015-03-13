@@ -70,8 +70,8 @@ class Join(Operator):
   def initializeMethod(self, **kwargs):
     if self.joinMethod == "indexed":
       self.indexId = kwargs.get("indexId", None)
-      if self.indexId is None or self.lhsKeySchema is None \
-          or self.storage.getIndex(self.indexId) is None:
+      if self.indexId is None or self.lhsKeySchema is None:
+          #or self.storage.getIndex(self.indexId) is None:
         raise ValueError("Invalid index for use in join operator")
 
   # Returns the output schema of this operator
@@ -195,7 +195,28 @@ class Join(Operator):
   # Indexed nested loops implementation
   #
   def indexedNestedLoops(self):
-    raise NotImplementedError
+    
+    if self.storage.getIndex(self.indexId) is None:
+        raise ValueError("Invalid index for use in join operator")
+    for (lPageId, lhsPage) in iter(self.lhsPlan):
+      for lTuple in lhsPage:
+        tuples = self.storage.fileMgr.lookupByIndex(self.lhsSchema.name, self.indexId, self.lhsSchema.projectBinary(lTuple, self.lhsKeySchema))
+        if tuples:
+          for rTupleId in tuples:
+            page = self.storage.bufferPool.getPage(rTupleId.pageId)
+            rTuple = page.getTuple(rTupleId)
+            joinExprEnv = self.loadSchema(self.lhsSchema, lTuple)
+            joinExprEnv.update(self.loadSchema(self.rhsSchema, rTuple))
+            if self.joinExpr:
+              if eval(self.joinExpr, globals(), joinExprEnv):
+                outputTuple = self.joinSchema.instantiate(*[joinExprEnv[f] for f in self.joinSchema.fields])
+                self.emitOutputTuple(self.joinSchema.pack(outputTuple))
+            else:
+              outputTuple = self.joinSchema.instantiate(*[joinExprEnv[f] for f in self.joinSchema.fields])
+              self.emitOutputTuple(self.joinSchema.pack(outputTuple))
+
+    # Return an iterator to the output relation
+    return self.storage.pages(self.relationId()) 
 
 
   ##################################
