@@ -100,9 +100,9 @@ class Sort(Operator):
     lowest = []
     done = []
 
-    print('========================')
+    # print('========================')
     for relID in self.sortedFiles:
-      print('relID: ',relID)
+      # print('relID: ',relID)
 
       it = self.storage.tuples(relID) 
       # print('it:',[e for e in it])
@@ -115,9 +115,9 @@ class Sort(Operator):
 
     # iterators that still need to be processed
     # to_be_processed = [ self.schema().unpack(it) for (idx,it) in enumerate(sorted_iterators) if !done(idx) ] 
-    print('sortedFiles: ',self.sortedFiles)
-    print('lowest: ', lowest)
-    print('done: ', done)
+    # print('sortedFiles: ',self.sortedFiles)
+    # print('lowest: ', lowest)
+    # print('done: ', done)
     sys.stdout.flush()
 
     while all(d != True for d in done):
@@ -129,7 +129,7 @@ class Sort(Operator):
         lowest[min_idx] = sys.maxsize# remove the index
         done[min_idx] = True
 
-      print(outputTuple)
+      # print(outputTuple)
       self.emitOutputTuple(self.schema().pack(outputTuple))
     
     if self.outputPages:

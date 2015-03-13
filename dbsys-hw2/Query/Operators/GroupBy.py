@@ -94,87 +94,169 @@ class GroupBy(Operator):
     self.initializeOutput()
     # outputPage = self.outputPages[0]
 
-    groupDict = dict()
+    # groupDict = dict()
     # Process all pages from the child operator.
+
+    ###################################################
+    # Partition input 
+    relIds = []
     try:
       # Loop through all tuples
       for (pageId, page) in self.inputIterator: 
         for inputTuple in page:
-
-          # Partition = hashFn( groupSchema(tuple) )
-          # aggregate = lambda( aggreSchema(tuple) )
-          # (Partition, Group) = aggragate
-
-
-          # insertTuple,
-          # deleteTuple
-          # updateTuple
-
+  
           # group value
           groupVals = self.subSchema.projectBinary(inputTuple, self.groupSchema)
-          # groupVals = self.groupSchema.unpack(groupVals)
 
           # partition 
           partition = self.groupHashFn(groupVals)
-          
-          # tuple values involved in aggregate
-          # aggVals   = self.subSchema.projectBinary(inputTuple, self.aggSchema)
-          curInVal = self.subSchema.unpack(inputTuple)
+          if( not self.storage.hasRelation( str(partition) ) ):
+            self.storage.createRelation(str(partition),self.subSchema)
+            relIds.append(str(partition))
+            assert(self.storage.hasRelation(str(partition)))
 
-          key = (partition,groupVals)
-
-          # self.storage.getIndex(partition)
-
-          # initialize if this is the first we've seen this group
-          if key not in groupDict:
-            # print('',key,' is not in dict! Initializing...')
-            curAggVal = self.aggSchema.instantiate( *[ e[0] for e in self.aggExprs ])
-          else:
-            curAggVal = self.aggSchema.unpack( groupDict[key] )
- 
-          # print('Key: ', self.groupSchema.unpack(key[1]) )
-          # print('Old Val: ', curAggVal )
-          # import pdb
-          # pdb.set_trace()
-
-
-          #for each lambda expression...
-          groupDict[key] = self.aggSchema.pack( self.aggSchema.instantiate(\
-            *[ self.aggExprs[i][1](curAggVal[i], curInVal) for i in range(len(self.aggExprs))]))
-
-          # print('New Val: ', self.aggSchema.unpack(groupDict[key]) )
-  
+          # print('inserting: ', groupVals,' at part:',str(partition),  ' = ', self.subSchema.unpack(inputTuple))
+          self.storage.insertTuple(str(partition),inputTuple)
     except StopIteration:
       pass
 
-    # print('outputSchema: ', self.outputSchema.toString())
-    for k,v in groupDict.items():
-      # print('K: ', k, '\tV:',v)
+    # print('rels: ',relIds)
+    ###################################################
+    # for each partition find aggregates
+    for relId in relIds:
+      groupDict = dict() # groups in this partition
+      for tup in self.storage.tuples(relId):
+
+        groupVal = self.subSchema.projectBinary(tup, self.groupSchema)
+        curInVal = self.subSchema.unpack(tup)
+
+        key = (groupVal)
+
+        # initialize if this is the first we've seen this group
+        if key not in groupDict:
+          curAggVal = self.aggSchema.instantiate( *[ e[0] for e in self.aggExprs ])
+        else:
+          curAggVal = self.aggSchema.unpack( groupDict[key] )
+
+        #for each lambda expression...
+        groupDict[key] = self.aggSchema.pack( self.aggSchema.instantiate(\
+          *[ self.aggExprs[i][1](curAggVal[i], curInVal) for i in range(len(self.aggExprs))]))
+
+        # print('New Val at key=',key,': ' , self.aggSchema.unpack(groupDict[key]) )
+
       
+      # At the end of each aggregate, finalize and emit tuple
+      for k,v in groupDict.items():
+        # print('K: ', k, '\tV:',v)
+        
+        # Run final aggregate lambda
+        curVal = self.aggSchema.unpack(v)
+        # print('curVal: ',curVal)
+        f = self.aggSchema.instantiate(\
+              *[ self.aggExprs[i][2](curVal[i]) for i in range(len(self.aggExprs))])
+        
+        finalVal = self.aggSchema.pack( f )
 
-      # Run final aggregate lambda
-      curVal = self.aggSchema.unpack(v)
-      # print('curVal: ',curVal)
-      finalVal = self.aggSchema.instantiate(\
-            *[ self.aggExprs[i][2](curVal[i]) for i in range(len(self.aggExprs))])
-      # print('finalVal: ',finalVal)
-      v = self.aggSchema.pack( finalVal )
+        # Create output tuples
+        output = self.loadSchema(self.groupSchema, k)
+        output.update(self.loadSchema(self.aggSchema, finalVal))
 
-      # Create output tuples
-      output = self.loadSchema(self.groupSchema, k[1])
-      output.update(self.loadSchema(self.aggSchema, v))
-
-      outputTuple = self.outputSchema.instantiate(*[output[f] for f in self.outputSchema.fields])
-
-      #print(outputTuple)
-
-      self.emitOutputTuple(self.outputSchema.pack(outputTuple))
-
+        outputTuple = self.outputSchema.instantiate(*[output[f] for f in self.outputSchema.fields])
+        # print('output: ', outputTuple)
+        self.emitOutputTuple(self.outputSchema.pack(outputTuple))
+    ###################################################
     if self.outputPages:
       self.outputPages = [self.outputPages[-1]]
 
     # Return an iterator to the output relation
     return self.storage.pages(self.relationId())
+
+  # # Set-at-a-time operator processing
+  # def processAllPages(self):
+  #   if self.inputIterator is None:
+  #     self.inputIterator = iter(self.subPlan)
+
+  #   self.initializeOutput()
+  #   # outputPage = self.outputPages[0]
+
+  #   # groupDict = dict()
+  #   # Process all pages from the child operator.
+
+  #   relIds = []
+  #   try:
+  #     # Loop through all tuples
+  #     for (pageId, page) in self.inputIterator: 
+  #       for inputTuple in page:
+
+  #         # Partition = hashFn( groupSchema(tuple) )
+  #         # aggregate = lambda( aggreSchema(tuple) )
+  #         # (Partition, Group) = aggragate
+        
+
+  #         # group value
+  #         groupVals = self.subSchema.projectBinary(inputTuple, self.groupSchema)
+  #         # groupVals = self.groupSchema.unpack(groupVals)
+
+  #         # partition 
+  #         partition = self.groupHashFn(groupVals)
+          
+  #         # tuple values involved in aggregate
+  #         # aggVals   = self.subSchema.projectBinary(inputTuple, self.aggSchema)
+  #         curInVal = self.subSchema.unpack(inputTuple)
+
+  #         key = (partition,groupVals)
+
+
+  #         # initialize if this is the first we've seen this group
+  #         if key not in groupDict:
+  #           # print('',key,' is not in dict! Initializing...')
+  #           curAggVal = self.aggSchema.instantiate( *[ e[0] for e in self.aggExprs ])
+  #         else:
+  #           curAggVal = self.aggSchema.unpack( groupDict[key] )
+ 
+  #         # print('Key: ', self.groupSchema.unpack(key[1]) )
+  #         # print('Old Val: ', curAggVal )
+  #         # import pdb
+  #         # pdb.set_trace()
+
+
+  #         #for each lambda expression...
+  #         groupDict[key] = self.aggSchema.pack( self.aggSchema.instantiate(\
+  #           *[ self.aggExprs[i][1](curAggVal[i], curInVal) for i in range(len(self.aggExprs))]))
+
+  #         # print('New Val: ', self.aggSchema.unpack(groupDict[key]) )
+  
+  #   except StopIteration:
+  #     pass
+
+  #   # print('outputSchema: ', self.outputSchema.toString())
+  #   for k,v in groupDict.items():
+  #     # print('K: ', k, '\tV:',v)
+      
+
+  #     # Run final aggregate lambda
+  #     curVal = self.aggSchema.unpack(v)
+  #     # print('curVal: ',curVal)
+  #     finalVal = self.aggSchema.instantiate(\
+  #           *[ self.aggExprs[i][2](curVal[i]) for i in range(len(self.aggExprs))])
+  #     # print('finalVal: ',finalVal)
+  #     v = self.aggSchema.pack( finalVal )
+
+  #     # Create output tuples
+  #     output = self.loadSchema(self.groupSchema, k[1])
+  #     output.update(self.loadSchema(self.aggSchema, v))
+
+  #     outputTuple = self.outputSchema.instantiate(*[output[f] for f in self.outputSchema.fields])
+
+  #     # print(outputTuple)
+
+  #     self.emitOutputTuple(self.outputSchema.pack(outputTuple))
+
+  #   if self.outputPages:
+  #     self.outputPages = [self.outputPages[-1]]
+
+  #   # Return an iterator to the output relation
+  #   return self.storage.pages(self.relationId())
 
 
   # Plan and statistics information
