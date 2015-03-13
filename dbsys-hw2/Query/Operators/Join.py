@@ -1,4 +1,5 @@
 import itertools
+import sys
 
 from Catalog.Schema import DBSchema
 from Query.Operator import Operator
@@ -95,10 +96,16 @@ class Join(Operator):
 
   # Iterator abstraction for join operator.
   def __iter__(self):
-    return NotImplementedError
+    self.initializeOutput()
+    self.inputIterator = iter(self.lhsPlan)
+    self.inputFinished = False
+
+    self.outputIterator = self.processAllPages()
+    
+    return self
 
   def __next__(self):
-    return NotImplementedError
+    return next(self.outputIterator)
 
   # Page-at-a-time operator processing
   def processInputPage(self, pageId, page):
@@ -151,18 +158,36 @@ class Join(Operator):
 
 
 
+
+
   ##################################
   #
   # Block nested loops implementation
   #
   # This attempts to use all the free pages in the buffer pool
   # for its block of the outer relation.
-
+  def blockNestedLoops(self):
+    
+    pinnedPages = self.accessPageBlock(self.storage.bufferPool, self.lhsPlan)
+    #TODO Pin right pages, handle overflow
+    result = self.nestedLoops()
+    self.removePageBlock(self.storage.bufferPool, pinnedPages)
+    return result
+      
+  
   # Accesses a block of pages from an iterator.
   # This method pins pages in the buffer pool during its access.
   # We track the page ids in the block to unpin them after processing the block.
   def accessPageBlock(self, bufPool, pageIterator):
-    raise NotImplementedError
+    pageIds = []
+    for (lPageId, lhsPage) in pageIterator:
+      bufPool.pinPage(lPageId)
+      pageIds.append(lPageId)
+    return pageIds
+
+  def removePageBlock(self, bufPool, pageIds):
+    for pageId in pageIds:
+      bufPool.unpinPage(pageId)
 
 
   ##################################
@@ -178,7 +203,118 @@ class Join(Operator):
   # Hash join implementation.
   #
   def hashJoin(self):
-    raise NotImplementedError
+    #Create lhs partition dictionary
+    #Hash values are the key
+    #File Ids are the values
+    lhs_partitions = {}
+    
+    #Hash lhs
+    for (lPageId, lhsPage) in iter(self.lhsPlan):
+      for lTuple in lhsPage:
+        
+        #lhs_ExprEnv = self.loadSchema(self.lhsSchema, lTuple)
+        lhs_HashEnv = self.loadSchema(self.lhsKeySchema, self.lhsSchema.projectBinary(lTuple, self.lhsKeySchema))
+        hashVal = eval(self.lhsHashFn, globals(), lhs_HashEnv)
+        
+        #If we have seen the hash value before, put it in the associated partition
+        if hashVal in lhs_partitions:
+          relId = lhs_partitions[hashVal]
+          tupId = self.storage.insertTuple(relId, lTuple)
+          self.storage.fileMgr.relationFile(relId)[1].tuples
+
+        else:
+          #We have not encountered this partition, create it
+          relId = "lhs_" + str(hashVal)
+          newFile = self.createPartition(relId, self.lhsSchema)
+          lhs_partitions[hashVal] = relId
+          self.storage.insertTuple(relId, lTuple)
+
+
+    #Create rhs partitions
+    rhs_partitions = {}
+
+    #Hash rhs
+    for (rPageId, rhsPage) in iter(self.rhsPlan):
+      for rTuple in rhsPage:
+        rhs_HashEnv = self.loadSchema(self.rhsKeySchema, self.rhsSchema.projectBinary(rTuple, self.rhsKeySchema))
+
+        hashVal = eval(self.rhsHashFn, rhs_HashEnv)
+        
+        if hashVal in rhs_partitions:
+          relId = rhs_partitions[hashVal]
+          self.storage.insertTuple(relId, rTuple)
+
+        else:
+          relId = "rhs_" + str(hashVal)
+          newFile = self.createPartition(relId, self.rhsSchema)
+          rhs_partitions[hashVal] = relId
+          tupId = self.storage.insertTuple(relId, rTuple)
+
+      outputId = "hashOut"
+      output = self.storage.createRelation(outputId, self.joinSchema)
+
+      for key in lhs_partitions:
+        lId = lhs_partitions[key]
+        if key in rhs_partitions:
+          rId = rhs_partitions[key]
+
+          
+          rhs_file = self.storage.fileMgr.relationFile(rId)[1]
+          lhs_file = self.storage.fileMgr.relationFile(lId)[1]
+
+          self.block_nested_loop_locals(outputId, self.rhsSchema, self.lhsSchema, rhs_file, lhs_file)
+          self.storage.removeRelation(rId)
+        self.storage.removeRelation(lId)
+        
+    
+    
+    return self.storage.pages(outputId)
+
+
+  def createPartition(self, relId, keySchema):
+
+    #relId = self.relationId()
+    if self.storage.hasRelation(relId):
+      self.storage.removeRelation(relId)
+    
+    self.storage.createRelation(relId, keySchema)
+
+  
+  
+  def block_nested_loop_locals(self, output, rSchema, lSchema, rFile, lFile):
+
+
+    
+    pinnedlhsPages = self.accessPageBlock(self.storage.bufferPool, lFile.pages())
+    pinnedrhsPages = self.accessPageBlock(self.storage.bufferPool, rFile.pages())
+
+  
+    for (lPageId, lhsPage) in lFile.pages():
+      for lTuple in lhsPage:
+        
+        # Load the lhs once per inner loop.
+        joinExprEnv = self.loadSchema(lSchema, lTuple)
+
+        for (rPageId, rhsPage) in rFile.pages():
+          for rTuple in rhsPage:           
+            # Load the RHS tuple fields.
+            joinExprEnv.update(self.loadSchema(rSchema, rTuple))
+            
+            if self.joinExpr:
+              # Evaluate the join predicate, and output if we have a match.
+              if eval(self.joinExpr, globals(), joinExprEnv):
+                outputTuple = self.joinSchema.instantiate(*[joinExprEnv[f] for f in self.joinSchema.fields])
+                self.storage.insertTuple(output, self.joinSchema.pack(outputTuple))
+            else:
+              lhs_HashEnv = self.loadSchema(self.lhsKeySchema, self.lhsSchema.projectBinary(lTuple, self.lhsKeySchema))
+              rhs_HashEnv = self.loadSchema(self.rhsKeySchema, self.rhsSchema.projectBinary(rTuple, self.rhsKeySchema))
+              if lTuple == rTuple:
+                outputTuple = self.joinSchema.instantiate(*[joinExprEnv[f] for f in self.joinSchema.fields])
+                self.storage.insertTuple(output, self.joinSchema.pack(outputTuple))
+              
+  
+    self.removePageBlock(self.storage.bufferPool, pinnedlhsPages)
+    self.removePageBlock(self.storage.bufferPool, pinnedrhsPages)
 
 
   # Plan and statistics information
