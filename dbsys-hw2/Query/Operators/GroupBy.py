@@ -166,7 +166,7 @@ class GroupBy(Operator):
 
       outputTuple = self.outputSchema.instantiate(*[output[f] for f in self.outputSchema.fields])
 
-      print(outputTuple)
+      #print(outputTuple)
 
       self.emitOutputTuple(self.outputSchema.pack(outputTuple))
 
