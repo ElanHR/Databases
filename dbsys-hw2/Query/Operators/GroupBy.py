@@ -132,8 +132,8 @@ class GroupBy(Operator):
           else:
             curAggVal = self.aggSchema.unpack( groupDict[key] )
  
-          print('Key: ', self.groupSchema.unpack(key[1]) )
-          print('Old Val: ', curAggVal )
+          # print('Key: ', self.groupSchema.unpack(key[1]) )
+          # print('Old Val: ', curAggVal )
           # import pdb
           # pdb.set_trace()
 
@@ -142,12 +142,12 @@ class GroupBy(Operator):
           groupDict[key] = self.aggSchema.pack( self.aggSchema.instantiate(\
             *[ self.aggExprs[i][1](curAggVal[i], curInVal) for i in range(len(self.aggExprs))]))
 
-          print('New Val: ', self.aggSchema.unpack(groupDict[key]) )
+          # print('New Val: ', self.aggSchema.unpack(groupDict[key]) )
   
     except StopIteration:
       pass
 
-    print('outputSchema: ', self.outputSchema.toString())
+    # print('outputSchema: ', self.outputSchema.toString())
     for k,v in groupDict.items():
       # print('K: ', k, '\tV:',v)
       
