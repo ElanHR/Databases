@@ -58,26 +58,6 @@ class Plan:
   def relations(self):
     return [op.relationId() for (_,op) in self.flatten() if isinstance(op, TableScan)]
 
-  @property
-  def joins(self):
-    return [op for (_, op) in self.flatten() if isinstance(op, Join)]
-
-  # Get basic sources (TableScan + Unary Operators) -- similar to flatten()
-  @property
-  def sources(self):
-    if self.root:
-      result = []
-      queue = deque([self.root])
-
-      while queue:
-        operator = queue.popleft()
-        if operator.deep_max_arity <= 1:
-          result.append(operator)
-        else:
-          queue.extendleft(operator.inputs())
-
-      return result
-
   # Pre-order depth-first flattening of the query tree.
   def flatten(self):
     if self.root:

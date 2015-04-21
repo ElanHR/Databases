@@ -66,7 +66,7 @@ class Optimizer:
   # This should perform operation pushdown, followed by join order selection.
   def optimizeQuery(self, plan):
     pushedDown_plan = self.pushdownOperators(plan)
-    joinPicked_plan = self.pickJoinOrder(plan)
+    joinPicked_plan = self.pickJoinOrder(pushedDown_plan)
 
     return joinPicked_plan
 

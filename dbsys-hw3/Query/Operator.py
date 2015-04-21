@@ -40,14 +40,6 @@ class Operator:
   def inputs(self):
     raise NotImplementedError
 
-  @property
-  def arity(self):
-    return len(self.inputs()) if self.inputs() else 0
-
-  @property
-  def deep_max_arity(self):
-    return max([self.arity] + [op.arity for op in self.inputs()])
-
   # Prepares the operator for execution.
   def prepare(self, database):
     self.storage = database.storageEngine()
