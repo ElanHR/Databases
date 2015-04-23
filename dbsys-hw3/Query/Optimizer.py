@@ -60,7 +60,37 @@ class Optimizer:
   # dyanmic programming algorithm. The plan cost should be compared with the
   # use of the cost model below.
   def pickJoinOrder(self, plan):
-    raise NotImplementedError
+
+    bestPlanFor = map()   # (set of relations) -> best plan to join these relations
+    toBeCombined = list() # queue of (sets of relations) to be processed
+    rels = plan.relations()
+
+    for r in rels:
+      todo.append(set(r))
+      optPlans[set(r)] = PlanBuilder(operator=TableScan(r.relationId(), schema), db=self.database)
+      #(PlanBuilder(operator=TableScan(r.relationId(), schema), db=self.database), 0) # (best plan, best cost)
+
+    while len(todo) != 0:
+      base = todo.pop(0)
+
+      if len(base) == len(rels): #we've joined all the relations
+        return optPlan[base]
+
+      # check all possibilities
+      for t in rels - base:
+        S = base.union(t)
+
+        curPlan = optPlan[base].join(optPlan[t])
+        curScore = cur
+
+        if optPlans[S] == None:
+          optPlans[S] = curPlan
+        else:
+          if curPlan.cost() > optPlans[S].cost():
+            optPlans[S] = curPlan
+
+    assert(False)
+
 
   # Optimize the given query plan, returning the resulting improved plan.
   # This should perform operation pushdown, followed by join order selection.
