@@ -5,6 +5,9 @@ from Query.Operators.Join import Join
 from Query.Operators.Project import Project
 from Query.Operators.Select import Select
 from Utils.ExpressionInfo import ExpressionInfo
+from Query.Operators.TableScan import TableScan
+from Query.Plan import PlanBuilder
+from Utils import ExpressionInfo
 
 class Optimizer:
   """
@@ -56,38 +59,86 @@ class Optimizer:
   def pushdownOperators(self, plan):
     raise NotImplementedError
 
+
+  def processJoinOperator(self, relationIds, operator):
+    exprInfo = ExpressionInfo.ExpressionInfo(operator.joinExpr)
+    relationsInvolved = set()
+    for attribute in exprInfo.getAttributes():
+      for relId in relationIds:
+        # print('Searching ', self.db.relationSchema(relId).fields)
+        if attribute in self.db.relationSchema(relId).fields:
+          # print('Found ', attribute, ' in ', relId)
+          relationsInvolved.add(relId)
+          break
+    # print(exprInfo.getAttributes())
+    return frozenset(relationsInvolved)
+
   # Returns an optimized query plan with joins ordered via a System-R style
   # dyanmic programming algorithm. The plan cost should be compared with the
   # use of the cost model below.
   def pickJoinOrder(self, plan):
 
-    bestPlanFor = map()   # (set of relations) -> best plan to join these relations
-    toBeCombined = list() # queue of (sets of relations) to be processed
-    rels = plan.relations()
+    # print(plan.flatten())
+    # print(plan.explain())
 
-    for r in rels:
-      todo.append(set(r))
-      optPlans[set(r)] = PlanBuilder(operator=TableScan(r.relationId(), schema), db=self.database)
-      #(PlanBuilder(operator=TableScan(r.relationId(), schema), db=self.database), 0) # (best plan, best cost)
+    optPlan = dict()   # (set of relations) -> best plan to join these relations
+    todo = list() # queue of (sets of relations) to be processed
+    relationIds = set(plan.relations())
+
+    # add all relations
+    for r in relationIds:
+      r_set = frozenset({r})
+      todo.append(r_set)
+      optPlan[r_set] = PlanBuilder(
+                          operator=TableScan(
+                                r, 
+                                self.db.relationSchema(r)), 
+                          db=self.db).finalize()
+
+    # add all join expressions
+    joinsExps = dict()
+    for (_, operator) in plan.flatten():
+      if isinstance(operator, Join):
+        relationsInvolved  = self.processJoinOperator(relationIds,operator)
+        # print(relationsInvolved)
+        for r in relationsInvolved:
+          # print('adding: ',frozenset({r}))
+          joinsExps[frozenset({r})] = (relationsInvolved, operator)
+
+
+
+    print('Relations: ', relationIds)
 
     while len(todo) != 0:
       base = todo.pop(0)
-
-      if len(base) == len(rels): #we've joined all the relations
+      print('Base=',base)
+      if len(base) == len(relationIds): #we've joined all the relations
         return optPlan[base]
 
       # check all possibilities
-      for t in rels - base:
-        S = base.union(t)
+      for t in [frozenset({t}) for t in relationIds - base]:
 
-        curPlan = optPlan[base].join(optPlan[t])
-        curScore = cur
+        # if 
+        print('t=',t)
+        S = frozenset(base.union(t))
+        print('S=',S)
+        
+        je = joinsExps[t]
+        if (je==None) or not (je[0].issubset(S)):
+          print('Invalid Join')
+          continue
 
-        if optPlans[S] == None:
-          optPlans[S] = curPlan
+        curPlan = Join(optPlan[base],optPlan[t], 
+                    expr=je[1].joinExpr,
+                    method='block-nested-loops')#je[1].joinMethod)
+
+        print('trying : ', base, ' and ', t)
+
+        if S not in optPlan:
+          optPlan[S] = curPlan
         else:
-          if curPlan.cost() > optPlans[S].cost():
-            optPlans[S] = curPlan
+          if curPlan.cost(estimated=True) < optPlan[S].cost(estimated=True):
+            optPlan[S] = curPlan
 
     assert(False)
 
@@ -101,5 +152,7 @@ class Optimizer:
     return joinPicked_plan
 
 if __name__ == "__main__":
+
+  print('hello!')
   import doctest
-  doctest.testmod()
+  doctest.testmod(verbose=True)
