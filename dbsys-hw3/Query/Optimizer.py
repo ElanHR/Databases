@@ -1,4 +1,7 @@
 import itertools
+import sys
+
+from collections import deque
 
 from Query.Plan import Plan
 from Query.Operators.Join import Join
@@ -7,7 +10,7 @@ from Query.Operators.Select import Select
 from Utils.ExpressionInfo import ExpressionInfo
 from Query.Operators.TableScan import TableScan
 from Query.Plan import PlanBuilder
-from Utils import ExpressionInfo
+
 
 class Optimizer:
   """
@@ -57,7 +60,392 @@ class Optimizer:
   # This does not need to cascade operators, but should determine a
   # suitable ordering for selection predicates based on the cost model below.
   def pushdownOperators(self, plan):
-    raise NotImplementedError
+
+    root = plan.root
+    newRoot = None
+
+    result = []
+    
+    #Stack in the form of CurrentOp, ParentOp, SelectToAdd, ChildType(Left/Right/Only)
+    queue = deque([(root, None, None, None, "None")])
+
+    while queue:
+
+      (op, parent, selectAdd, projectAdd, childType)  = queue.popleft()
+      children = op.inputs()
+
+      #At a join, groupby, select, project, or union
+      if children:
+        if op.operatorType() == "Select":
+          child = children[0]
+          self.select(result, (op, parent, selectAdd, projectAdd, childType), child, queue)
+          
+        elif op.operatorType() == "Project":
+          child = children[0] 
+          self.project(result, (op, parent, selectAdd, projectAdd, childType), child, queue)
+                             
+        elif op.operatorType == "GroupBy":
+          self.groupBy(result, (op, parent, selectAdd, projectAdd, childType), queue)
+
+        elif op.operatorType == "Join":
+          self.join(result, (op, parent, selectAdd, projectAdd, childType), queue)
+                             
+        else:
+          self.union(result, (op, parent, selectAdd, projectAdd, childType), queue)
+
+      #At table scan
+      else:
+        self.tableScan(result, (op, parent, selectAdd, projectAdd, childType))
+
+          
+    for (op, parent) in result:
+      sys.stderr.write(op.explain() + " ")
+      sys.stderr.flush()
+    sys.stderr.write("\n")
+    sys.stderr.flush()
+
+    tree = self.arrayToTree(result)
+
+    self.flatPrint(tree)
+
+    
+    return tree
+
+  def arrayToTree(self, result):
+    tempArray = []
+    
+    for op, parent in reversed(result):
+      if len(tempArray) > 0:
+        self.flatPrint(tempArray[-1])
+      sys.stderr.write(op.explain() + "\n")
+      sys.stderr.flush()
+
+      sys.stderr.write(str(tempArray) + "\n")
+      sys.stderr.flush()
+      
+      if op.operatorType() == "TableScan":
+        tempArray.append(op)
+        
+      if op.operatorType() == "Project":
+        project = Project(tempArray.pop(), op.projectExprs)
+        tempArray.append(project)
+        
+      if op.operatorType() == "Select":
+        select = Select(tempArray.pop(), op.selectExpr)
+        tempArray.append(select)
+        
+      if op.operatorType() == "Join":
+        op.lhsPlan = tempArray.pop()
+        op.rhsPlan = tempArray.pop()
+        tempArray.append(op)
+        
+      if op.operatorType == "Union":
+        union = Union(tempArray.pop(), tempArray.pop())
+        tempArray.append(union)
+        
+      else:
+        op.subPlan = tempArray.pop()
+        tempArray.append(op)
+
+    return tempArray.pop()
+
+  # Pre-order depth-first flattening of the query tree.
+  def flatPrint(self, root):
+    result = []
+    queue  = deque([(0, root)])
+
+    while queue:
+      (depth, operator) = queue.popleft()
+      children = operator.inputs()
+      result.append((depth, operator))
+      if children:
+        queue.extendleft([(depth+1, c) for c in children])
+
+    for depth, f in result:
+      sys.stderr.write(str(depth) + " " + f.explain() + "\n")
+      sys.stderr.flush()
+        
+      
+
+  #Pushdown helper for GroupBy
+  #Don't need to push through groupBys, so place all selects and projects
+  def groupBy(self, result, queueEntry, queue):
+    (op, parent, selectAdd, projectAdd, childType) = queueEntry
+    
+    newSelect = None
+    newProject = None
+
+    #Place all selects
+    if selectAdd:
+      expr = ''
+      for e in selectAdd:
+        if len(expr) > 0:
+          expr += 'and'
+        expr += e
+      newSelect = Select(op, expr)
+      result.append((newSelect, parent))
+
+    #Place all projects
+    if projectAdd:
+      newProject = Project(op, projectAdd)
+      if newSelect:
+        result.append((newProject, newSelect))
+      else:
+        result.append((newProject, parent))
+
+    #Place GroupBy
+    if newProject:
+      result.append((op, newProject))
+    elif newSelect:
+      result.append((op, newSelect))
+    else:
+      result.append((op, parent))
+
+    child = children[0]
+    queue.extendleft((child, op, None, None, "Only"))
+    
+  #Pushdown helper for project
+  def project(self, result, queueEntry, child, queue):
+    (op, parent, selectAdd, projectAdd, childType) = queueEntry
+
+    if child.operatorType() == "Select":
+      selectAttributes = ExpressionInfo(child.selectExpr).getAttributes()
+      projectAttributes = self.getProjectAttributes(op.projectExprs)
+
+      if set(selectAttributes).issubset(set(projectAttributes)):
+        if projectAdd:
+          projectAdd.update(op.projectExprs)
+        else:
+          projectAdd = op.projectExprs
+          queue.extendleft([(child, parent, selectAdd, projectAdd, "Only")])
+      else:
+        result.append((op, parent))
+        queue.extendleft([(child, op, selectAdd, projectAdd, "Only")])
+  
+
+    else:
+      if projectAdd:
+        projectAdd.update(op.projectExprs)
+      queue.extendleft([(child, op, selectAdd, projectAdd, "Only")])
+
+
+  #Helper for project pushdown.  Gets attributes involved with project
+  def getProjectAttributes(self, projectExprs):
+    attributes = set()
+    for key, value in projectExprs.items():
+      attrib = ExpressionInfo(value[0]).getAttributes()
+      for a in attrib:
+        attributes.add(a)
+
+    return attributes
+      
+      
+  #Pushdown helper for select
+  def select(self, result, queueEntry, child, queue):
+    (op, parent, selectAdd, projectAdd, childType) = queueEntry
+    if not selectAdd:
+      selectAdd = []
+    for e in ExpressionInfo(op.selectExpr).decomposeCNF():
+      selectAdd.append(e)
+    queue.extendleft([(child, op, selectAdd, projectAdd, "Only")])
+    
+
+  #Leaf of the plan tree, no pushdown through this
+  def tableScan(self, result, queueEntry):
+    (op, parent, selectAdd, projectAdd, childType) = queueEntry
+    newSelect = None
+    newProject = None
+    if selectAdd:
+      expr = ''
+      for e in selectAdd:
+        if len(expr) > 0:
+          expr += 'and'
+        expr += e
+      newSelect = Select(op, expr)
+      result.append((newSelect, parent))
+    if projectAdd:
+      newProject = Project(op, projectAdd)
+      if newSelect:
+        result.append((newProject, newSelect))
+      else:
+        result.append((newProject, parent))
+    if newProject:
+      result.append((op, newProject))
+    elif newSelect:
+      result.append((op, newSelect))
+    else:
+      result.append((op, parent))
+
+      
+    
+  def join(self, result, queueEntry, queue):
+    (op, parent, selectAdd, projectAdd, childType) = queueEntry
+    
+    newSelect = None
+    newProject = None
+    
+    keep = None
+    moveLeft = None
+    moveRight = None
+
+    rightPro = None
+    leftPro = None
+    keepPro = None
+
+    rhsSchema = op.rhsSchema
+    lhsSchema = op.lhsSchema
+
+    if selectAdd:
+      keep = []
+      moveLeft = []
+      moveRight = []
+      for e in selectAdd:
+        attrib = ExpressionInfo(e).getAttributes()
+        left = set(attrib) < set(lhsSchema.fields)
+        right = set(attrib) < set(rhsSchema.fields)
+
+        #Both sides have all attributes
+        if left and right:
+          keep.append(e)
+
+        #Neither side has all attributes
+        elif left == right:
+          keep.append(e)
+
+        #Move select left
+        elif left:
+          moveLeft.append(e)
+            
+        #Move select right
+        else:
+          moveRight.append(e)
+
+        if len(keep) > 0:
+          expr = ''
+          for e in keep:
+            if len(expr) > 0:
+              expr += 'and'
+          expr += e
+          newSelect = Select(op, expr)
+          result.append((newSelect, parent))
+          
+      if projectAdd:
+
+        projectAttrib = self.getProjectAttributes(projectAdd)
+        joinAttrib = ExpressionInfo(op.joinExpr).getAttributes()
+        #Projection includes Join Expression
+        if set(joinAttrib).issubset(set(projectAttrib)):
+          (rightPro, leftPro, keepPro) = self.findRHSandLHSProject(projectAdd, rhsSchema.fields, lhsSchema.fields)
+        if len(keepPro) > 0:
+          newProject = Project(op, keepPro)
+          if newSelect:
+            result.append((newProject, newSelect))
+          else:
+            result.append((newProject, parent))
+
+      if newProject:
+        result.append((op, newProject))
+      elif newSelect:
+        result.append((op, newSelect))
+      else:
+        result.append((op, parent))
+
+      queue.extendleft([(op.lhsPlan, op, moveLeft, leftPro, "Left")])
+      queue.extendleft([(op.rhsPlan, op, moveRight, rightPro, "Right")])
+
+  def union(self, result, queueEntry, queue):
+    (op, parent, selectAdd, projectAdd, childType) = queueEntry
+    
+    newSelect = None
+    newProject = None
+    
+    keep = None
+    moveLeft = None
+    moveRight = None
+
+    rightPro = None
+    leftPro = None
+    keepPro = None
+
+    rhsSchema = op.rhsPlan.schema()
+    lhsSchema = op.lhsPlan.schema()
+      
+    if selectAdd:
+      keep = []
+      moveLeft = []
+      moveRight = []
+      for e in selectAdd:
+        attrib = ExpressionInfo(e).getAttributes()
+        left = set(attrib) < set(lhsSchema.fields)
+        right = set(attrib) < set(rhsSchema.fields)
+
+        #Both sides have all attributes
+        if left and right:
+          moveLeft.append(e)
+          moveRight.append(e)
+
+        #Neither side has all attributes
+        elif left == right:
+          keep.append(e)
+
+        #Move select left
+        elif left:
+          moveLeft.append(e)
+            
+        #Move select right
+        else:
+          moveRight.append(e)
+
+        if len(keep) > 0:
+          expr = ''
+          for e in keep:
+            if len(expr) > 0:
+              expr += 'and'
+          expr += e
+          newSelect = Select(op, expr)
+          result.append((newSelect, parent))
+          
+      if projectAdd:
+
+        projectAttrib = self.getProjectAttributes(projectAdd)
+        (rightPro, leftPro, keepPro) = self.findRHSandLHSProject(projectAdd, rhsSchema.fields, lhsSchema.fields)
+        if len(keepPro) > 0:
+          newProject = Project(op, keepPro)
+          if newSelect:
+            result.append((newProject, newSelect))
+          else:
+            result.append((newProject, parent))
+
+      if newProject:
+        result.append((op, newProject))
+      elif newSelect:
+        result.append((op, newSelect))
+      else:
+        result.append((op, parent))
+
+      queue.extendleft([(op.lhsPlan, op, moveLeft, leftPro, "Left")])
+      queue.extendleft([(op.rhsPlan, op, moveRight, rightPro, "Right")])
+
+  def findRHSandLHSProject(self, projectExpr, rhs, lhs):
+    right = {}
+    left = {}
+    keep = {}
+
+    for key, value in projectExpr.items():
+      isRight = False
+      isLeft = False
+      attrib = ExpressionInfo(value[0]).getAttributes()
+      if set(attrib).issubset(set(rhs)):
+        isRight = True
+        right[key] = value
+      if set(attrib).issubset(set(lhs)):
+        isLeft = True
+        left[key] = value
+      if not isRight and not isLeft:
+        keep[key] = value
+
+    return right, left, keep
+
 
 
   def processJoinOperator(self, relationIds, operator):
