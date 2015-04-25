@@ -7,6 +7,7 @@ from Query.Plan import Plan
 from Query.Operators.Join import Join
 from Query.Operators.Project import Project
 from Query.Operators.Select import Select
+from Query.Operators.Union import Union
 from Utils.ExpressionInfo import ExpressionInfo
 from Query.Operators.TableScan import TableScan
 from Query.Plan import PlanBuilder
@@ -39,8 +40,9 @@ class Optimizer:
         .where('eid > 0 and id > 0 and (eid == 5 or id == 6)')\
         .select({'id': ('id', 'int'), 'eid':('eid','int')}).finalize()
 
-  >>> db.optimizer.pushdownOperators(query5)
-
+  >>> pushDown = db.optimizer.pushdownOperators(query5)
+  >>> type(pushDown) is Plan
+  True
   """
 
   def __init__(self, db):
@@ -98,55 +100,41 @@ class Optimizer:
         self.tableScan(result, (op, parent, selectAdd, projectAdd, childType))
 
           
-    for (op, parent) in result:
-      sys.stderr.write(op.explain() + " ")
-      sys.stderr.flush()
-    sys.stderr.write("\n")
-    sys.stderr.flush()
 
     tree = self.arrayToTree(result)
 
     self.flatPrint(tree)
 
+    plan = Plan(root=tree)
     
-    return tree
+    return plan
 
   def arrayToTree(self, result):
     tempArray = []
     
     for op, parent in reversed(result):
-      if len(tempArray) > 0:
-        self.flatPrint(tempArray[-1])
-      sys.stderr.write(op.explain() + "\n")
-      sys.stderr.flush()
-
-      sys.stderr.write(str(tempArray) + "\n")
-      sys.stderr.flush()
-      
       if op.operatorType() == "TableScan":
         tempArray.append(op)
-        
-      if op.operatorType() == "Project":
+      elif op.operatorType() == "Project":
         project = Project(tempArray.pop(), op.projectExprs)
         tempArray.append(project)
-        
-      if op.operatorType() == "Select":
+      elif op.operatorType() == "Select":
         select = Select(tempArray.pop(), op.selectExpr)
         tempArray.append(select)
-        
-      if op.operatorType() == "Join":
+      elif "Join" in op.operatorType():
         op.lhsPlan = tempArray.pop()
         op.rhsPlan = tempArray.pop()
         tempArray.append(op)
-        
-      if op.operatorType == "Union":
-        union = Union(tempArray.pop(), tempArray.pop())
+      elif op.operatorType() == "UnionAll":
+        lhs = tempArray.pop()
+        rhs = tempArray.pop()
+        union = Union(lhs, rhs)
+        sys.stderr.write(union.explain() + "\n")
+        sys.stderr.flush()
         tempArray.append(union)
-        
-      else:
+      elif op.operatorType() == "GroupBy":
         op.subPlan = tempArray.pop()
         tempArray.append(op)
-
     return tempArray.pop()
 
   # Pre-order depth-first flattening of the query tree.
