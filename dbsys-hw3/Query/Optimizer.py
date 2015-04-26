@@ -440,6 +440,10 @@ class Optimizer:
     # print(exprInfo.getAttributes())
     return frozenset(relationsInvolved)
 
+
+  def getLatestOptimizationStats(self):
+    return (self.totalCombosTried, self.totalPlansProcessed)
+
   # Returns an optimized query plan with joins ordered via a System-R style
   # dyanmic programming algorithm. The plan cost should be compared with the
   # use of the cost model below.
@@ -447,6 +451,9 @@ class Optimizer:
 
     # print(plan.flatten())
     # print(plan.explain())
+
+    self.totalCombosTried    = 0
+    self.totalPlansProcessed = 0
 
     optPlan = dict()   # (set of relations) -> best plan to join these relations
     todo = list() # queue of (sets of relations) to be processed
@@ -490,11 +497,15 @@ class Optimizer:
         S = frozenset(base.union(t))
         print('S=',S)
         
+
+        self.totalCombosTried += 1
         je = joinsExps[t]
         if (je==None) or not (je[0].issubset(S)):
           print('Invalid Join')
           continue
 
+
+        self.totalPlansProcessed += 1
         curPlan = Join(optPlan[base],optPlan[t], 
                     expr=je[1].joinExpr,
                     method='block-nested-loops')#je[1].joinMethod)

@@ -26,14 +26,15 @@ class BushyOptimizer(Optimizer):
     print(plan.flatten())
     # print(plan.explain())
 
+    self.totalCombosTried    = 0
+    self.totalPlansProcessed = 0
+
     optPlan = dict()   # (set of relations) -> best plan to join these relations
-    todo = list() # queue of (sets of relations) to be processed
     relationIds = set(plan.relations())
 
     # add all relations
     for r in relationIds:
       r_set = frozenset({r})
-      todo.append(r_set)
       optPlan[r_set] = PlanBuilder(
                           operator=TableScan(
                                 r, 
@@ -69,11 +70,14 @@ class BushyOptimizer(Optimizer):
 
             # if there is a relation joining something in Left to something in Right
             for t in O:
+
+              self.totalCombosTried += 1
               je = joinsExps[t]
-              if (je==None) or not (je[0].issubset(right)):
+              if (je==None) or not (je[0].issubset(S)):
                 print('Invalid Join')
                 continue
               
+              self.totalPlansProcessed += 1
               curPlan = Join(optPlan[O],optPlan[right], 
                     expr=je[1].joinExpr,
                     method='block-nested-loops')

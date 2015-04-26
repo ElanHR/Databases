@@ -25,6 +25,9 @@ class GreedyOptimizer(Optimizer):
     print('GreedyJoin')
     print(plan.flatten())
 
+    self.totalCombosTried    = 0
+    self.totalPlansProcessed = 0
+
     todo = set() # queue of (sets of relations) to be processed
     relationIds = set(plan.relations())
 
@@ -68,10 +71,13 @@ class GreedyOptimizer(Optimizer):
           print(t)
           je = joinsExps[frozenset({t})]
           print(je)
+
+          self.totalCombosTried += 1
           if (je==None) or not (je[0].issubset(S)):
             print('Invalid Join')
             continue
           
+          self.totalPlansProcessed += 1
           curPlan = Join(left,right, 
                 expr=je[1].joinExpr,
                 method='block-nested-loops')

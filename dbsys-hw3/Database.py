@@ -3,6 +3,9 @@ import json, io, os, os.path
 from Catalog.Schema        import DBSchema, DBSchemaEncoder, DBSchemaDecoder
 from Query.Plan            import PlanBuilder
 from Query.Optimizer       import Optimizer
+from Query.BushyOptimizer  import BushyOptimizer
+from Query.GreedyOptimizer import GreedyOptimizer
+
 from Storage.StorageEngine import StorageEngine
 
 class Database:
@@ -31,7 +34,7 @@ class Database:
       self.relationMap     = kwargs.get("relations", {})
       self.defaultPageSize = kwargs.get("pageSize", io.DEFAULT_BUFFER_SIZE)
       self.storage         = kwargs.get("storage", StorageEngine(**storageArgs))
-      self.optimizer       = Optimizer(self)
+      self.optimizer       = GreedyOptimizer(self)
 
       checkpointFound = os.path.exists(os.path.join(self.storage.fileMgr.dataDir, Database.checkpointFile))
       restoring       = "restore" in kwargs
@@ -58,6 +61,9 @@ class Database:
 
   def fileManager(self):
     return self.storage.fileMgr if self.storage else None
+
+  def setQueryOptimizer(self, newOptimizer):
+    self.optimizer = newOptimizer
 
   def queryOptimizer(self):
     return self.optimizer
