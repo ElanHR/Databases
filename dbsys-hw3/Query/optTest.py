@@ -2,33 +2,34 @@ import Database
 from Query.Optimizer       import Optimizer
 from Query.BushyOptimizer  import BushyOptimizer
 from Query.GreedyOptimizer import GreedyOptimizer
-
+import timeit
 
 db = Database.Database()
 try:
-   db.createRelation('department', [('did', 'int'), ('eid', 'int')])
-   db.createRelation('employee', [('id', 'int'), ('age', 'int')])
+   # db.createRelation('department', [('did', 'int'), ('eid', 'int')])
+   # db.createRelation('employee',   [('id',  'int'), ('age', 'int')])
+   db.createRelation('A', [('a1', 'int'), ('a2', 'int'), ('a3', 'int')])
+   db.createRelation('B', [('b1', 'int'), ('b2', 'int'), ('b3', 'int')])
+   db.createRelation('C', [('c1', 'int'), ('c2', 'int'), ('c3', 'int')])
+   db.createRelation('D', [('d1', 'int'), ('d2', 'int'), ('d3', 'int')])
+   db.createRelation('E', [('e1', 'int'), ('e2', 'int'), ('e3', 'int')])
+   db.createRelation('F', [('f1', 'int'), ('f2', 'int'), ('f3', 'int')])
+   db.createRelation('G', [('g1', 'int'), ('g2', 'int'), ('g3', 'int')])
+   db.createRelation('H', [('h1', 'int'), ('h2', 'int'), ('h3', 'int')])
+   db.createRelation('I', [('i1', 'int'), ('i2', 'int'), ('i3', 'int')])
+   db.createRelation('J', [('j1', 'int'), ('j2', 'int'), ('j3', 'int')])
+   db.createRelation('K', [('k1', 'int'), ('k2', 'int'), ('k3', 'int')])
+   db.createRelation('L', [('l1', 'int'), ('l2', 'int'), ('l3', 'int')])
 
-   db.createRelation('A', [('a1', 'int'), ('a2', 'int'),('a3', 'int')])
-   db.createRelation('B', [('b1', 'int'), ('b2', 'int'),('b3', 'int')])
-   db.createRelation('C', [('c1', 'int'), ('c2', 'int'),('c3', 'int')])
-   db.createRelation('D', [('d1', 'int'), ('d2', 'int'),('d3', 'int')])
-   db.createRelation('E', [('e1', 'int'), ('e2', 'int'),('e3', 'int')])
-   db.createRelation('F', [('f1', 'int'), ('f2', 'int'),('f3', 'int')])
-   db.createRelation('G', [('g1', 'int'), ('g2', 'int'),('g3', 'int')])
-   db.createRelation('H', [('h1', 'int'), ('h2', 'int'),('h3', 'int')])
-   db.createRelation('I', [('i1', 'int'), ('i2', 'int'),('i3', 'int')])
-   db.createRelation('J', [('j1', 'int'), ('j2', 'int'),('j3', 'int')])
-   db.createRelation('K', [('k1', 'int'), ('k2', 'int'),('k3', 'int')])
-   db.createRelation('L', [('l1', 'int'), ('l2', 'int'),('l3', 'int')])
-
-except ValueError:
-   pass
-### SELECT * FROM employee JOIN department ON id = eid
+except ValueError as e:
+    # print(e)
+    pass
+### SelecT * fROM employee jOiN department ON id = eid
 query4 = db.query().fromTable('employee').join( \
       db.query().fromTable('department'), \
       method='block-nested-loops', expr='id == eid').finalize()
 
+# db.optimizer.pickjoinOrder(query4)
 
 
 query2= db.query().fromTable('A').join( \
@@ -51,19 +52,19 @@ query8= query6.join(\
               db.query().fromTable('G').join( \
               db.query().fromTable('H'), \
               method='block-nested-loops', expr='g1 == h1'),
-          method='block-nested-loops', expr='f1 == g1').finalize()
+          method='block-nested-loops', expr='f1 == g1')
 
 query10= query8.join(\
               db.query().fromTable('I').join( \
               db.query().fromTable('J'), \
               method='block-nested-loops', expr='i1 == j1'),
-          method='block-nested-loops', expr='h1 == i1').finalize()
+          method='block-nested-loops', expr='h1 == i1')
 
 query12= query10.join(\
               db.query().fromTable('K').join( \
               db.query().fromTable('L'), \
               method='block-nested-loops', expr='k1 == l1'),
-          method='block-nested-loops', expr='j1 == k1').finalize()
+          method='block-nested-loops', expr='j1 == k1')
 
 q2  = query2.finalize()
 q4  = query4.finalize()
@@ -77,20 +78,23 @@ test_queries = (q2, q4, q6, q8, q10, q12)
 
 
 print('\n\n==== BushyOptimizer ====')
-db.setQueryOptimizer(BushyOptimizer(db))
-for q in test_queries:
-    db.optimizer.pickJoinOrder(q)
-    print()
+db.setQueryOptimizer(optimizer='BushyOptimizer')
+for (n,q) in enumerate(test_queries):
+    print('Initial Query:\n',q.explain())
+
+    # db.optimizer.pickjoinOrder(q)
+    t = timeit.Timer('db.optimizer.pickJoinOrder(q)',"from __main__ import db,q",).timeit()
+    stats = db.optimizer.getlatestOptimizationStats()
+    print('t\t', t, '\t c:\t',stats[0], '\t p:\t',stats[1] )
 
 
-db.setQueryOptimizer(Optimizer(db))
-db.optimizer.pickJoinOrder(query4)
+# db.setQueryOptimizer(Optimizer(db))
+# db.optimizer.pickjoinOrder(query4)
 
-db.setQueryOptimizer(BushyOptimizer(db))
+# db.setQueryOptimizer(bushyOptimizer(db))
 
-db.setQueryOptimizer(GreedyOptimizer(db))
+# db.setQueryOptimizer(greedyOptimizer(db))
 
-db.optimizer.pickJoinOrder(query4)
 
 
 

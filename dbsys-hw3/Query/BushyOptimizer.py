@@ -23,8 +23,8 @@ class BushyOptimizer(Optimizer):
   # use of the cost model below.
   def pickJoinOrder(self, plan):
     print('BushyJoin')
-    print(plan.flatten())
-    # print(plan.explain())
+    # print(plan.flatten())
+    print('Initial:\n',plan.explain())
 
     self.totalCombosTried    = 0
     self.totalPlansProcessed = 0
@@ -58,13 +58,13 @@ class BushyOptimizer(Optimizer):
     n = len(relationIds)
     for i in range(2,n+1):
       # for each subset of size i
-      for S in k_subsets(relationIds,i):
+      for S in [frozenset(S) for S in k_subsets(relationIds,i)]:
         print('S = ',S)
         # for each subset of S
         for j in range(1,int(i/2)+1):
-          for O in k_subsets(S,j):
+          for O in [frozenset(O) for O in k_subsets(S,j)]:
 
-            right = S-O
+            right = frozenset(S-O)
             print('O = ',O)
             print('combining',O,right)
 
@@ -72,7 +72,7 @@ class BushyOptimizer(Optimizer):
             for t in O:
 
               self.totalCombosTried += 1
-              je = joinsExps[t]
+              je = joinsExps[frozenset({t})]
               if (je==None) or not (je[0].issubset(S)):
                 print('Invalid Join')
                 continue

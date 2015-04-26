@@ -62,8 +62,17 @@ class Database:
   def fileManager(self):
     return self.storage.fileMgr if self.storage else None
 
-  def setQueryOptimizer(self, newOptimizer):
-    self.optimizer = newOptimizer
+  def setQueryOptimizer(self, optimizer):
+    if optimizer=='BushyOptimizer':
+      self.optimizer = BushyOptimizer(self)
+    elif optimizer=='GreedyOptimizer':
+      self.optimizer = GreedyOptimizer(self)
+    elif optimizer=='LeftDeepOptimizer':
+      self.optimizer = Optimizer(self)
+    else:
+      raise ValueError('needs to be BushyOptimizer, GreedyOptimizer, or LeftDeepOptimizer')
+
+
 
   def queryOptimizer(self):
     return self.optimizer
