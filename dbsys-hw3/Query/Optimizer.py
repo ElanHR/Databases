@@ -51,11 +51,11 @@ class Optimizer:
 
   # Caches the cost of a plan computed during query optimization.
   def addPlanCost(self, plan, cost):
-    raise NotImplementedError
+    self.statsCache[plan.relations()] = cost
 
   # Checks if we have already computed the cost of this plan.
   def getPlanCost(self, plan):
-    raise NotImplementedError
+    return self.statsCache[plan.relations()]
 
   # Given a plan, return an optimized plan with both selection and
   # projection operations pushed down to their nearest defining relation
@@ -153,8 +153,6 @@ class Optimizer:
       sys.stderr.write(str(depth) + " " + f.explain() + "\n")
       sys.stderr.flush()
         
-      
-
   #Pushdown helper for GroupBy
   #Don't need to push through groupBys, so place all selects and projects
   def groupBy(self, result, queueEntry, queue):
@@ -216,7 +214,6 @@ class Optimizer:
         projectAdd.update(op.projectExprs)
       queue.extendleft([(child, op, selectAdd, projectAdd, "Only")])
 
-
   #Helper for project pushdown.  Gets attributes involved with project
   def getProjectAttributes(self, projectExprs):
     attributes = set()
@@ -226,8 +223,7 @@ class Optimizer:
         attributes.add(a)
 
     return attributes
-      
-      
+        
   #Pushdown helper for select
   def select(self, result, queueEntry, child, queue):
     (op, parent, selectAdd, projectAdd, childType) = queueEntry
@@ -237,7 +233,6 @@ class Optimizer:
       selectAdd.append(e)
     queue.extendleft([(child, op, selectAdd, projectAdd, "Only")])
     
-
   #Leaf of the plan tree, no pushdown through this
   def tableScan(self, result, queueEntry):
     (op, parent, selectAdd, projectAdd, childType) = queueEntry
@@ -263,8 +258,6 @@ class Optimizer:
       result.append((op, newSelect))
     else:
       result.append((op, parent))
-
-      
     
   def join(self, result, queueEntry, queue):
     (op, parent, selectAdd, projectAdd, childType) = queueEntry
@@ -434,10 +427,8 @@ class Optimizer:
 
     return right, left, keep
 
-
-
   def processJoinOperator(self, relationIds, operator):
-    exprInfo = ExpressionInfo.ExpressionInfo(operator.joinExpr)
+    exprInfo = ExpressionInfo(operator.joinExpr)
     relationsInvolved = set()
     for attribute in exprInfo.getAttributes():
       for relId in relationIds:
@@ -512,9 +503,13 @@ class Optimizer:
 
         if S not in optPlan:
           optPlan[S] = curPlan
+          self.addPlanCost(curPlan, curPlan.cost(estimated=False))
         else:
-          if curPlan.cost(estimated=True) < optPlan[S].cost(estimated=True):
+          curCost = curPlan.cost(estimated=False)
+          if curCost < self.getPlanCost(optPlan[S]):
             optPlan[S] = curPlan
+            self.addPlanCost(curPlan, curCost)
+
 
     assert(False)
 
@@ -529,6 +524,6 @@ class Optimizer:
 
 if __name__ == "__main__":
 
-  print('hello!')
+  print('Optimizer __main__')
   import doctest
   doctest.testmod(verbose=True)
