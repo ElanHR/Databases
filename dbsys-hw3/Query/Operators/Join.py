@@ -1,7 +1,9 @@
 import itertools
+import sys
 
 from Catalog.Schema import DBSchema
 from Query.Operator import Operator
+from Utils.ExpressionInfo import ExpressionInfo
 
 class Join(Operator):
   def __init__(self, lhsPlan, rhsPlan, **kwargs):
@@ -58,6 +60,7 @@ class Join(Operator):
         raise ValueError("Invalid join inputs, overlapping schema detected")
 
 
+
   # Initializes the output schema for this join.
   # This is a concatenation of all fields in the lhs and rhs schema.
   def initializeSchema(self):
@@ -72,6 +75,8 @@ class Join(Operator):
       if self.indexId is None or self.lhsKeySchema is None \
           or self.storage.getIndex(self.indexId) is None:
         raise ValueError("Invalid index for use in join operator")
+
+      
 
   # Returns the output schema of this operator
   def schema(self):
@@ -312,7 +317,7 @@ class Join(Operator):
     # Create a partition file as needed.
     if not self.storage.hasRelation(partRelId):
       self.storage.createRelation(partRelId, partSchema)
-      self.partitionFiles[int(left)][partitionId] = partRelId
+      self.partitionFiles[int(not left)][partitionId] = partRelId
 
     partFile = self.storage.fileMgr.relationFile(partRelId)[1]
     if partFile:
@@ -338,6 +343,38 @@ class Join(Operator):
 
 
   # Plan and statistics information
+  def cost(self, estimated):
+    pageSize = self.storage.bufferPool.pageSize
+    
+    numLHS = self.lhsPlan.cardinality(estimated)
+    numRHS = self.rhsPlan.cardinality(estimated)
+
+    numPagesLHS = numLHS/pageSize
+    numPagesRHS = numRHS/pageSize
+
+    totalCost = 0
+    
+    if self.joinMethod == "nested-loops":
+      #For each tuple in the outer loop (lhs), scan the tuples in the inner loop (rhs)
+      totalCost = numPagesLHS + numLHS*numPagesRHS
+
+      
+    elif self.joinMethod == "block-nested-loops":
+      memoryCapacity = self.storage.bufferPool.poolSize/pageSize
+      totalCost = numPagesLHS + (numPagesLHS/(memoryCapacity - 2))*numPagesRHS
+
+    elif self.joinMethod == "indexed":
+      totalCost = numPagesLHS + numLHS*(self.selectivity(estimated)/pageSize)
+
+
+    elif self.joinMethod == "hash":
+      #Create Hash costs 2*(pr+ps)
+      #Block nested loop join takes pr+ps
+      totalCost = 3*(numPagesLHS+numPagesRHS)
+
+    
+
+    return totalCost
 
   # Returns a single line description of the operator.
   def explain(self):
@@ -360,6 +397,42 @@ class Join(Operator):
         ))) + ")"
 
     return super().explain() + exprs
+
+
+
+
+  # Returns this operator's selectivity, either as an estimate or
+  # a profiled actual selectivity.
+  def selectivity(self, estimated):
+    joinExpressionInfo = ExpressionInfo(self.joinExpr)
+    joinExpressions = joinExpressionInfo.decomposeCNF()
+    attribute = joinExpressionInfo.getAttributes().pop()
+    reductionFactor = 0
+                        
+    if attribute in self.estimatedMaxima:
+    
+      for exp in joinExpressions:
+        #Equality Join
+        if '==' in exp:
+          reductionFactor = 1/max(self.lhsPlan.cardinality(estimated), self.rhsPlan.cardinality(estimated))
+          
+        else:
+          #Inequality
+          if estimated:
+            maxima = self.estimatedMaxima[attribute]
+            reductionFactor = (maxima[0] - value)/(maxima[0] - maxima[1])
+
+    else:
+      reductionFactor = 1/4
+      
+
+    return reductionFactor
+          
+      
+    
+   
+        
+    
 
 # An iterator class for looping over pairs of pages from partition files.
 class PartitionIterator:
