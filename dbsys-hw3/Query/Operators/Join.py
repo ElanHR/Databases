@@ -343,6 +343,7 @@ class Join(Operator):
 
 
   # Plan and statistics information
+  
   def cost(self, estimated):
     pageSize = self.storage.bufferPool.pageSize
     
@@ -356,12 +357,11 @@ class Join(Operator):
     
     if self.joinMethod == "nested-loops":
       #For each tuple in the outer loop (lhs), scan the tuples in the inner loop (rhs)
-      totalCost = numPagesLHS + numLHS*numPagesRHS
-
-      
+      totalCost = numPagesLHS + (numLHS*numPagesRHS)
+   
     elif self.joinMethod == "block-nested-loops":
       memoryCapacity = self.storage.bufferPool.poolSize/pageSize
-      totalCost = numPagesLHS + (numPagesLHS/(memoryCapacity - 2))*numPagesRHS
+      totalCost = numPagesLHS + ((numPagesLHS/(memoryCapacity - 2))*numPagesRHS)
 
     elif self.joinMethod == "indexed":
       totalCost = numPagesLHS + numLHS*(self.selectivity(estimated)/pageSize)
@@ -371,6 +371,7 @@ class Join(Operator):
       #Create Hash costs 2*(pr+ps)
       #Block nested loop join takes pr+ps
       totalCost = 3*(numPagesLHS+numPagesRHS)
+
 
     
 
@@ -406,27 +407,36 @@ class Join(Operator):
   def selectivity(self, estimated):
     joinExpressionInfo = ExpressionInfo(self.joinExpr)
     joinExpressions = joinExpressionInfo.decomposeCNF()
-    attribute = joinExpressionInfo.getAttributes().pop()
-    reductionFactor = 0
-                        
-    if attribute in self.estimatedMaxima:
+    attributes = joinExpressionInfo.getAttributes()
+    reductionFactors = []
     
+
+    for attribute in attributes:
+
+      #There are statistics on this attribute
+      
+      
       for exp in joinExpressions:
         #Equality Join
         if '==' in exp:
-          reductionFactor = 1/max(self.lhsPlan.cardinality(estimated), self.rhsPlan.cardinality(estimated))
+          if self.lhsPlan.cardinality(estimated) > 0 or self.rhsPlan.cardinality(estimated) > 0:
+            reductionFactors.append(1/max(self.lhsPlan.cardinality(estimated), self.rhsPlan.cardinality(estimated)))
           
         else:
-          #Inequality
-          if estimated:
-            maxima = self.estimatedMaxima[attribute]
-            reductionFactor = (maxima[0] - value)/(maxima[0] - maxima[1])
+          if attribute in self.estimatedMaxima:
+            #Inequality
+            if estimated:
+              maxima = self.estimatedMaxima[attribute]
+              reductionFactor.append((maxima[0] - value)/(maxima[0] - maxima[1]))
+            else:
+              maxima = self.actualMaxima[attribute]
+              reductionFactors.append((maxima[0] - value)/(maxima[0] - maxima[1]))
 
-    else:
-      reductionFactor = 1/4
+      if len(reductionFactors) == 0:
+        #Defalut value less than 1/2, as recommended in the textbook
+        reductionFactors.append(1/4)
       
-
-    return reductionFactor
+    return min(reductionFactors)
           
       
     
