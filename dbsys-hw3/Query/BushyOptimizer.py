@@ -22,9 +22,9 @@ class BushyOptimizer(Optimizer):
   # dyanmic programming algorithm. The plan cost should be compared with the
   # use of the cost model below.
   def pickJoinOrder(self, plan):
-    print('BushyJoin')
+    # print('BushyJoin')
     # print(plan.flatten())
-    print('Initial:\n',plan.explain())
+    # print('Initial:\n',plan.explain())
 
     self.totalCombosTried    = 0
     self.totalPlansProcessed = 0
@@ -35,61 +35,77 @@ class BushyOptimizer(Optimizer):
     # add all relations
     for r in relationIds:
       r_set = frozenset({r})
-      optPlan[r_set] = PlanBuilder(
-                          operator=TableScan(
-                                r, 
-                                self.db.relationSchema(r)), 
-                          db=self.db).finalize()
-
+      new_op = TableScan(r,self.db.relationSchema(r))
+      new_op.prepare(self.db)
+      optPlan[r_set] = new_op
+      
     # add all join expressions
     joinsExps = dict()
     for (_, operator) in plan.flatten():
       if isinstance(operator, Join):
         relationsInvolved  = self.processJoinOperator(relationIds,operator)
-        # print(relationsInvolved)
-        for r in relationsInvolved:
-          # print('adding: ',frozenset({r}))
-          joinsExps[frozenset({r})] = (relationsInvolved, operator)
+        # print('rel involved: ', relationsInvolved)
+        for r in [frozenset({r}) for r in relationsInvolved]:
+
+          # print('adding: ',r)
+          if r in joinsExps:
+            joinsExps[r].append((relationsInvolved, operator))
+          else:
+            joinsExps[r] = [(relationsInvolved, operator)]
 
 
 
-    print('Relations: ', relationIds)
-
+    # print('Relations: ', relationIds)
+    # print('Join Exp:  ', joinsExps)
     n = len(relationIds)
     for i in range(2,n+1):
       # for each subset of size i
       for S in [frozenset(S) for S in k_subsets(relationIds,i)]:
-        print('S = ',S)
+        # print('S = ',S)
         # for each subset of S
         for j in range(1,int(i/2)+1):
           for O in [frozenset(O) for O in k_subsets(S,j)]:
 
             right = frozenset(S-O)
-            print('O = ',O)
-            print('combining',O,right)
+            # print('O = ',O)
+            # print('combining',O,right)
 
             # if there is a relation joining something in Left to something in Right
             for t in O:
 
               self.totalCombosTried += 1
-              je = joinsExps[frozenset({t})]
-              if (je==None) or not (je[0].issubset(S)):
-                print('Invalid Join')
-                continue
-              
-              self.totalPlansProcessed += 1
-              curPlan = Join(optPlan[O],optPlan[right], 
-                    expr=je[1].joinExpr,
-                    method='block-nested-loops')
 
-              if S not in optPlan:
-                optPlan[S] = curPlan
-                self.addPlanCost(curPlan, curPlan.cost(estimated=False))
-              else:
-                curCost = curPlan.cost(estimated=False)
-                if curCost < self.getPlanCost(optPlan[S]):
-                  optPlan[S] = curPlan
-                  self.addPlanCost(curPlan, curCost)
+
+              je = joinsExps[frozenset({t})]
+
+              if (je==None):
+                # print('Invalid Join')
+                continue
+              else: 
+                for join_expression in je:
+                  if not join_expression[0].issubset(S) or O not in optPlan or right not in optPlan:
+                    # print('Invalid Join')
+                    continue
+
+                  self.totalPlansProcessed += 1
+                  curPlan = Join(optPlan[O],optPlan[right], 
+                        expr=join_expression[1].joinExpr,
+                        method='block-nested-loops')
+
+                  if S not in optPlan:
+                    optPlan[S] = curPlan
+                    self.addPlanCost(S, curPlan.cost(estimated=True))
+                    # print('Adding: ',S)
+                  else:
+                    curCost = curPlan.cost(estimated=True)
+                    if curCost < self.getPlanCost(S):
+                      optPlan[S] = curPlan
+                      self.addPlanCost(S, curCost)
+                      # print('Updating: ',S)
+                    else:
+                      # print('Not added.')
+                      pass
+    return optPlan[frozenset(relationIds)]
 
 if __name__ == "__main__":
 

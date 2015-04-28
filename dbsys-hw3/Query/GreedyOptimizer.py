@@ -28,30 +28,34 @@ class GreedyOptimizer(Optimizer):
     self.totalCombosTried    = 0
     self.totalPlansProcessed = 0
 
+    # optPlan = dict()
     todo = set() # queue of (sets of relations) to be processed
     relationIds = set(plan.relations())
 
     # add all relations
     for r in relationIds:
-      todo.add(PlanBuilder(
-                  operator=TableScan(
-                        r, 
-                        self.db.relationSchema(r)), 
-                  db=self.db).finalize())
+      new_op = TableScan(r,self.db.relationSchema(r))
+      new_op.prepare(self.db)
+      todo.add( tuple([frozenset(r), new_op] )) 
 
     # add all join expressions
     joinsExps = dict()
     for (_, operator) in plan.flatten():
       if isinstance(operator, Join):
         relationsInvolved  = self.processJoinOperator(relationIds,operator)
-        # print(relationsInvolved)
-        for r in relationsInvolved:
-          # print('adding: ',frozenset({r}))
-          joinsExps[frozenset({r})] = (relationsInvolved, operator)
+        # print('rel involved: ', relationsInvolved)
+        for r in [frozenset({r}) for r in relationsInvolved]:
 
-    print(joinsExps)
+          # print('adding: ',r)
+          if r in joinsExps:
+            joinsExps[r].append((relationsInvolved, operator))
+          else:
+            joinsExps[r] = [(relationsInvolved, operator)]
 
+
+    print('JoinExps: ',joinsExps)
     print('Relations: ', relationIds)
+    print('Todo: ',todo)
 
     n = len(relationIds)
 
@@ -64,65 +68,84 @@ class GreedyOptimizer(Optimizer):
       for possible_join_pair in k_subsets(todo,2):
         (left, right)  = possible_join_pair
         # right = list(possible_join_pair)[1]
-        print('left: ', left.relations())
-        print('right: ', right.relations())
-        S = left.relations() + right.relations()
-        for t in left.relations():
+
+        print('left:  ', left)
+        print('right: ', right)
+        S = frozenset(left[0].union(right[0]))
+        print('S:     ', S)
+        for t in left[0]:
           print(t)
-          je = joinsExps[frozenset({t})]
-          print(je)
-
-          self.totalCombosTried += 1
-          if (je==None) or not (je[0].issubset(S)):
-            print('Invalid Join')
-            continue
           
-          self.totalPlansProcessed += 1
-          curPlan = Join(left,right, 
-                expr=je[1].joinExpr,
-                method='block-nested-loops')
+          self.totalCombosTried += 1
 
-          curCost = curPlan.cost(estimated=False)
-          if curCost < curBestCost:
-            curBestPair = possible_join_pair
-            curBestPlan = curPlan
-            curBestCost = curCost
-
-      todo = ((todo-curBestPair).union(curBestPlan))
-
-
-
-    for i in range(2,n+1):
-      # for each subset of size i
-      for S in k_subsets(relationIds,i):
-        print('S = ',S)
-        # for each subset of S
-        for j in range(1,int(i/2)+1):
-          for O in k_subsets(S,j):
-
-            right = S-O
-            print('O = ',O)
-            print('combining',O,right)
-
-            # if there is a relation joining something in Left to something in Right
-            for t in O:
-              je = joinsExps[t]
-              if (je==None) or not (je[0].issubset(right)):
-                print('Invalid Join')
+          je = joinsExps[frozenset({t})]
+          if (je==None):
+            # print('Invalid Join')
+            continue
+          else: 
+            for join_expression in je:
+              if not join_expression[0].issubset(S):
+                # print('Invalid Join')
                 continue
-              
-              curPlan = Join(optPlan[O],optPlan[right], 
-                    expr=je[1].joinExpr,
+      
+              self.totalPlansProcessed += 1
+              curPlan = Join(left[1],right[1], 
+                    expr=join_expression[1].joinExpr,
                     method='block-nested-loops')
 
-              if S not in optPlan:
-                optPlan[S] = curPlan
-                self.addPlanCost(curPlan, curPlan.cost(estimated=False))
-              else:
-                curCost = curPlan.cost(estimated=False)
-                if curCost < self.getPlanCost(optPlan[S]):
-                  optPlan[S] = curPlan
-                  self.addPlanCost(curPlan, curCost)
+              curCost = curPlan.cost(estimated=False)
+              if curCost < curBestCost:
+                curBestPair = set([left,right])
+                curBestPlan = tuple([S,curPlan])
+                curBestCost = curCost
+
+      print('curBestPlan: ',curBestPlan)
+      print('Test: ',(todo-curBestPair))
+
+      todo = (todo-curBestPair).add((curBestPlan))
+      print('newTodo: ',todo)
+
+    print('Final: ',todo)
+    # assert len(todo) == 1
+    print('Final: ',next(iter(todo)))
+    return next(iter(todo))
+
+    # for i in range(2,n+1):
+    #   # for each subset of size i
+    #   for S in k_subsets(relationIds,i):
+    #     print('S = ',S)
+    #     # for each subset of S
+    #     for j in range(1,int(i/2)+1):
+    #       for O in k_subsets(S,j):
+
+    #         right = S-O
+    #         print('O = ',O)
+    #         print('combining',O,right)
+
+    #         # if there is a relation joining something in Left to something in Right
+    #         for t in O:
+    #           je = joinsExps[t]
+    #           if (je==None):
+    #             # print('Invalid Join')
+    #             continue
+    #           else: 
+    #             for join_expression in je:
+    #               if not join_expression[0].issubset(S):
+    #                 # print('Invalid Join')
+    #                 continue
+              
+    #               curPlan = Join(optPlan[O], optPlan[right], 
+    #                     expr=join_expression[1].joinExpr,
+    #                     method='block-nested-loops')
+
+    #               if S not in optPlan:
+    #                 optPlan[S] = curPlan
+    #                 self.addPlanCost(curPlan, curPlan.cost(estimated=False))
+    #               else:
+    #                 curCost = curPlan.cost(estimated=False)
+    #                 if curCost < self.getPlanCost(optPlan[S]):
+    #                   optPlan[S] = curPlan
+    #                   self.addPlanCost(curPlan, curCost)
 
 if __name__ == "__main__":
 

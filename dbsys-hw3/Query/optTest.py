@@ -4,6 +4,8 @@ from Query.BushyOptimizer  import BushyOptimizer
 from Query.GreedyOptimizer import GreedyOptimizer
 import timeit
 
+from Query.Plan import Plan
+
 db = Database.Database()
 try:
    # db.createRelation('department', [('did', 'int'), ('eid', 'int')])
@@ -74,7 +76,20 @@ q10 = query10.finalize()
 q12 = query12.finalize()
 
 
-test_queries = (q2, q4, q6, q8, q10, q12)
+test_queries = (q2, q4)#, q6, q8, q10, q12)
+
+print('test_queries:\n',test_queries)
+
+print('\n\n==== LeftDeepOptimizer ====')
+db.setQueryOptimizer(optimizer='LeftDeepOptimizer')
+for (n,q) in enumerate(test_queries):
+    print('Initial Query:\n',q.explain())
+
+    # p = Plan(root=db.optimizer.pickJoinOrder(q))
+    # print(p.explain())
+    t = timeit.Timer('db.optimizer.pickJoinOrder(q)',"from __main__ import db,q",).timeit(1)
+    stats = db.optimizer.getLatestOptimizationStats()
+    print('t:', t, '\t c:',stats[0], '\t p:',stats[1] )
 
 
 print('\n\n==== BushyOptimizer ====')
@@ -82,11 +97,24 @@ db.setQueryOptimizer(optimizer='BushyOptimizer')
 for (n,q) in enumerate(test_queries):
     print('Initial Query:\n',q.explain())
 
-    # db.optimizer.pickjoinOrder(q)
-    t = timeit.Timer('db.optimizer.pickJoinOrder(q)',"from __main__ import db,q",).timeit()
-    stats = db.optimizer.getlatestOptimizationStats()
-    print('t\t', t, '\t c:\t',stats[0], '\t p:\t',stats[1] )
+    # p = Plan(root=db.optimizer.pickJoinOrder(q))
+    # print(p.explain())
+    t = timeit.Timer('db.optimizer.pickJoinOrder(q)',"from __main__ import db,q",).timeit(1)
+    stats = db.optimizer.getLatestOptimizationStats()
+    print('t:', t, '\t c:',stats[0], '\t p:',stats[1] )
 
+
+
+print('\n\n==== GreedyOptimizer ====')
+db.setQueryOptimizer(optimizer='GreedyOptimizer')
+for (n,q) in enumerate(test_queries):
+    print('Initial Query:\n',q.explain())
+
+    # p = Plan(root=db.optimizer.pickJoinOrder(q))
+    # print(p.explain())
+    t = timeit.Timer('db.optimizer.pickJoinOrder(q)',"from __main__ import db,q",).timeit(1)
+    stats = db.optimizer.getLatestOptimizationStats()
+    print('t:', t, '\t c:',stats[0], '\t p:',stats[1] )    
 
 # db.setQueryOptimizer(Optimizer(db))
 # db.optimizer.pickjoinOrder(query4)
