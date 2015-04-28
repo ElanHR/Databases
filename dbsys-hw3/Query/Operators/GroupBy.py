@@ -172,10 +172,31 @@ class GroupBy(Operator):
     
 
 
+  def cost(self, estimated):
+    #Get the cost of partitioning.  Must look at all tuples
+    partitionCost = self.localCost(estimated)
+
+    #Get the aggregation cost.  The aggregation expression is run on all partitions
+    aggregationCost = partitionCost * self.selectivity(estimated)
+
+    return partitionCost + aggregationCost
+    
   def selectivity(self, estimated):
     card = self.cardinality(estimated)
-    attribute = ExpressionInfo(self.groupExpr).pop()
-    
-    return self.numDistinctValues(attribute, estimated)/card
+    attributeDistinctValues = []
+
+    for attribute, atype in self.groupSchema.schema():
+      if estimated:
+        if attribute in self.distinctValuesEstimate:
+          attributeDistinctValues.append(self.numDistinctValues(attribute, estimated))
+
+      else:
+        if attribute in self.distinctValuesActual:
+          attributeDistinctValues.append(self.numDistinctValues(attribute, estimated))
+
+    if len(attributeDistinctValues) == 0:
+      return 1
+      
+    return max(attributeDistinctValues)/card
 
   

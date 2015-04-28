@@ -27,6 +27,8 @@ class Optimizer:
   ...   db.createRelation('employee', [('id', 'int'), ('age', 'int')])
   ... except ValueError:
   ...   pass
+
+  
   ### SELECT * FROM employee JOIN department ON id = eid
   >>> query4 = db.query().fromTable('employee').join( \
         db.query().fromTable('department'), \
@@ -64,7 +66,6 @@ class Optimizer:
   def pushdownOperators(self, plan):
 
     root = plan.root
-    newRoot = None
 
     result = []
     
@@ -103,7 +104,7 @@ class Optimizer:
 
     tree = self.arrayToTree(result)
 
-    self.flatPrint(tree)
+#    self.flatPrint(tree)
 
     plan = Plan(root=tree)
     

@@ -27,38 +27,34 @@ class Operator:
 
 
   def updateStats(self, outputTuple, estimated):
-    tupleSchema = self.schema()
-    if estimated:
-      if not tupleSchema in estimatedMaxima:
-        self.estimatedMaxima[tupleSchema] = {}
-        self.distinctValuesEstimate[self.schema()] = {}
-        for field, fieldType in self.schema().schema():
-          fieldValue = outputTuple.clazz.field
-          self.estimatedMaxima[tupleSchema][field] = [value, value]
-          self.distinctValuesEstimate[tupleSchema][field] = {value}
-          
-    else:
-      if not self.schema() in actualMaxima:
-        self.actualMaxima[self.schema()] = {}
-        self.distinctValuesActual[self.schema()] = {}
-
         
     for field, fieldType in self.schema().schema():
       fieldValue = outputTuple.clazz.field
       if estimated:
-        self.distinctValuesEstimate[tupleSchema][field].add(fieldValue)
         
-        maxima = self.estimatedMaxima[field]
-        newMaxima = [max(fieldValue, maxima[0]), min(fieldValue, maxima[1])]
-        
-        self.estimatedMaxima[field] = newMaxima
+        if not field in estimatedMaxima:
+          self.estimatedMaxima[field] = [fieldValue, fieldValue]
+          self.distinctValuesEstimate[field] = {fieldValue}
+          
+        else:
+          self.distinctValuesEstimate[field].add(fieldValue)
+          maxima = self.estimatedMaxima[field]
+          newMaxima = [max(fieldValue, maxima[0]), min(fieldValue, maxima[1])]
+          
+          self.estimatedMaxima[field] = newMaxima
         
       else:
-        self.distinctValuesActual[tupleSchema][field].add(fieldValue)
-        maxima = self.actualMaxima[field]
-        newMaxima = [max(fieldValue, maxima[0]), min(fieldValue, maxima[1])]
-        
-        self.actualMaxima[field] = newMaxima
+        self.distinctValuesActual[field].add(fieldValue)
+        if not field in actualMaxima:
+          self.actualMaxima[field] = [fieldValue, fieldValue]
+          self.distinctValuesActuals[field] = {fieldValue}
+
+        else:
+          self.distinctValuesActual[field].add(fieldValue)
+          maxima = self.actualMaxima[field]
+          newMaxima = [max(fieldValue, maxima[0]), min(fieldValue, maxima[1])]
+          
+          self.actualMaxima[field] = newMaxima
 
   def numDistinctValues(self, field, estimated):
     if estimated:
