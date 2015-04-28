@@ -1,5 +1,6 @@
 from Catalog.Schema import DBSchema
 from Query.Operator import Operator
+from Utils.ExpressionInfo import ExpressionInfo
 
 class GroupBy(Operator):
   def __init__(self, subPlan, **kwargs):
@@ -40,6 +41,7 @@ class GroupBy(Operator):
     schema = self.operatorType() + str(self.id())
     fields = self.groupSchema.schema() + self.aggSchema.schema()
     self.outputSchema = DBSchema(schema, fields)
+
 
   # Returns the output schema of this operator
   def schema(self):
@@ -165,3 +167,15 @@ class GroupBy(Operator):
   def explain(self):
     return super().explain() + "(groupSchema=" + self.groupSchema.toString() \
                              + ", aggSchema=" + self.aggSchema.toString() + ")"
+
+
+    
+
+
+  def selectivity(self, estimated):
+    card = self.cardinality(estimated)
+    attribute = ExpressionInfo(self.groupExpr).pop()
+    
+    return self.numDistinctValues(attribute, estimated)/card
+
+  

@@ -20,6 +20,53 @@ class Operator:
     self.estimatedCardinality = 0
     self.actualCardinality    = 0
 
+    self.estimatedMaxima = {}
+    self.actualMaxima = {}
+    self.distinctValuesEstimate = {}
+    self.distinctValuesActual = {}
+
+
+  def updateStats(self, outputTuple, estimated):
+    tupleSchema = self.schema()
+    if estimated:
+      if not tupleSchema in estimatedMaxima:
+        self.estimatedMaxima[tupleSchema] = {}
+        self.distinctValuesEstimate[self.schema()] = {}
+        for field, fieldType in self.schema().schema():
+          fieldValue = outputTuple.clazz.field
+          self.estimatedMaxima[tupleSchema][field] = [value, value]
+          self.distinctValuesEstimate[tupleSchema][field] = {value}
+          
+    else:
+      if not self.schema() in actualMaxima:
+        self.actualMaxima[self.schema()] = {}
+        self.distinctValuesActual[self.schema()] = {}
+
+        
+    for field, fieldType in self.schema().schema():
+      fieldValue = outputTuple.clazz.field
+      if estimated:
+        self.distinctValuesEstimate[tupleSchema][field].add(fieldValue)
+        
+        maxima = self.estimatedMaxima[field]
+        newMaxima = [max(fieldValue, maxima[0]), min(fieldValue, maxima[1])]
+        
+        self.estimatedMaxima[field] = newMaxima
+        
+      else:
+        self.distinctValuesActual[tupleSchema][field].add(fieldValue)
+        maxima = self.actualMaxima[field]
+        newMaxima = [max(fieldValue, maxima[0]), min(fieldValue, maxima[1])]
+        
+        self.actualMaxima[field] = newMaxima
+
+  def numDistinctValues(self, field, estimated):
+    if estimated:
+      return len(self.distinctValuesEstimate[field])
+    else:
+      return len(self.distinctValuesActual[field])
+    
+
   # Returns this operator's identifier.
   def id(self):
     return self.opId
