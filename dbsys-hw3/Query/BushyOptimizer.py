@@ -22,9 +22,9 @@ class BushyOptimizer(Optimizer):
   # dyanmic programming algorithm. The plan cost should be compared with the
   # use of the cost model below.
   def pickJoinOrder(self, plan):
-    # print('BushyJoin')
-    # print(plan.flatten())
-    # print('Initial:\n',plan.explain())
+    print('BushyJoin')
+    print(plan.flatten())
+    print('Initial:\n',plan.explain())
 
     self.totalCombosTried    = 0
     self.totalPlansProcessed = 0
@@ -91,7 +91,8 @@ class BushyOptimizer(Optimizer):
                   curPlan = Join(optPlan[O],optPlan[right], 
                         expr=join_expression[1].joinExpr,
                         method='block-nested-loops')
-
+                  curPlan.prepare(self.db)
+                  
                   if S not in optPlan:
                     optPlan[S] = curPlan
                     self.addPlanCost(S, curPlan.cost(estimated=True))
