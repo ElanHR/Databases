@@ -76,7 +76,7 @@ q10 = query10.finalize()
 q12 = query12.finalize()
 
 
-test_queries = (q2, q4)#, q6, q8, q10, q12)
+test_queries = (q2, q4, q6, q8, q10, q12)
 
 print('test_queries:\n',test_queries)
 
