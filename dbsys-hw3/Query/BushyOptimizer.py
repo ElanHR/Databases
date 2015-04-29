@@ -22,9 +22,9 @@ class BushyOptimizer(Optimizer):
   # dyanmic programming algorithm. The plan cost should be compared with the
   # use of the cost model below.
   def pickJoinOrder(self, plan):
-    print('BushyJoin')
-    print(plan.flatten())
-    print('Initial:\n',plan.explain())
+    # print('BushyJoin')
+    # print(plan.flatten())
+    # print('Initial:\n',plan.explain())
 
     self.totalCombosTried    = 0
     self.totalPlansProcessed = 0

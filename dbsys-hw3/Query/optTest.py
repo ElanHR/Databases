@@ -83,7 +83,7 @@ print('test_queries:\n',test_queries)
 print('\n\n==== LeftDeepOptimizer ====')
 db.setQueryOptimizer(optimizer='LeftDeepOptimizer')
 for (n,q) in enumerate(test_queries):
-    print('Initial Query:\n',q.explain())
+    # print('Initial Query:\n',q.explain())
 
     # p = Plan(root=db.optimizer.pickJoinOrder(q))
     # print(p.explain())
@@ -91,11 +91,10 @@ for (n,q) in enumerate(test_queries):
     stats = db.optimizer.getLatestOptimizationStats()
     print('t:', t, '\t c:',stats[0], '\t p:',stats[1] )
 
-
 print('\n\n==== BushyOptimizer ====')
 db.setQueryOptimizer(optimizer='BushyOptimizer')
 for (n,q) in enumerate(test_queries):
-    print('Initial Query:\n',q.explain())
+    # print('Initial Query:\n',q.explain())
 
     # p = Plan(root=db.optimizer.pickJoinOrder(q))
     # print(p.explain())
@@ -108,7 +107,7 @@ for (n,q) in enumerate(test_queries):
 print('\n\n==== GreedyOptimizer ====')
 db.setQueryOptimizer(optimizer='GreedyOptimizer')
 for (n,q) in enumerate(test_queries):
-    print('Initial Query:\n',q.explain())
+    # print('Initial Query:\n',q.explain())
 
     # p = Plan(root=db.optimizer.pickJoinOrder(q))
     # print(p.explain())

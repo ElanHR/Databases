@@ -27,8 +27,6 @@ class Optimizer:
   ...   db.createRelation('employee', [('id', 'int'), ('age', 'int')])
   ... except ValueError:
   ...   pass
-
-  
   ### SELECT * FROM employee JOIN department ON id = eid
   >>> query4 = db.query().fromTable('employee').join( \
         db.query().fromTable('department'), \
@@ -66,6 +64,7 @@ class Optimizer:
   def pushdownOperators(self, plan):
 
     root = plan.root
+    newRoot = None
 
     result = []
     
@@ -104,7 +103,7 @@ class Optimizer:
 
     tree = self.arrayToTree(result)
 
-#    self.flatPrint(tree)
+    self.flatPrint(tree)
 
     plan = Plan(root=tree)
     
@@ -484,12 +483,12 @@ class Optimizer:
 
 
 
-    print('Relations: ', relationIds)
-    print('Join Exp:  ', joinsExps)
+    # print('Relations: ', relationIds)
+    # print('Join Exp:  ', joinsExps)
 
     while len(todo) != 0:
       base = todo.pop(0)
-      print('\nBase=',base)
+      # print('\nBase=',base)
       if len(base) == len(relationIds): #we've joined all the relations
         return optPlan[base]
 
@@ -497,9 +496,9 @@ class Optimizer:
       for t in [frozenset({t}) for t in relationIds - base]:
 
         # if 
-        print('t=',t)
+        # print('t=',t)
         S = frozenset(base.union(t))
-        print('S=',S)
+        # print('S=',S)
         
 
         self.totalCombosTried += 1
@@ -512,61 +511,29 @@ class Optimizer:
         else: 
           for join_expression in je:
             if not join_expression[0].issubset(S) or base not in optPlan or t not in optPlan:
-              print('Invalid Join')
+              # print('Invalid Join')
               continue
 
             self.totalPlansProcessed += 1
             curPlan = Join(optPlan[base],optPlan[t], 
                   expr=join_expression[1].joinExpr,
                   method='block-nested-loops')
+            curPlan.prepare(self.db)
 
             if S not in optPlan:
               optPlan[S] = curPlan
               self.addPlanCost(S, curPlan.cost(estimated=True))
               todo.append(S)
-              print('Adding: ',S, '\t',join_expression[1].joinExpr)
+              # print('Adding: ',S, '\t',join_expression[1].joinExpr)
             else:
               curCost = curPlan.cost(estimated=True)
               if curCost < self.getPlanCost(S):
                 optPlan[S] = curPlan
                 self.addPlanCost(S, curCost)
-                print('Updating: ',S)
+                # print('Updating: ',S)
               else:
-                print('Not added. (',join_expression[1].joinExpr,')')
+                # print('Not added. (',join_expression[1].joinExpr,')')
                 pass
-
-
-        # if t not in joinsExps:
-        #   print('Invalid Join1')
-        #   continue
-        # else: 
-        #   for join_expression in joinsExps[t]:
-        #     if not join_expression[0].issubset(S) or t not in optPlan or base not in optPlan:
-        #       print('Invalid Join2')
-        #       continue
-
-
-
-        #     self.totalPlansProcessed += 1
-        #     curPlan = Join(optPlan[base],optPlan[t], 
-        #                 expr=join_expression[1].joinExpr,
-        #                 method='block-nested-loops')#je[1].joinMethod)
-
-        #     print('trying : ', base, ' and ', t)
-
-        #     if S not in optPlan:
-        #       optPlan[S] = curPlan
-        #       self.addPlanCost(curPlan, curPlan.cost(estimated=False))
-        #       print('Adding: ',S)
-        #     else:
-        #       curCost = curPlan.cost(estimated=False)
-        #       if curCost < self.getPlanCost(optPlan[S]):
-        #         optPlan[S] = curPlan
-        #         self.addPlanCost(curPlan, curCost)
-        #         print('Updating: ',S)
-        #       else:
-        #         print('Not added.')
-        #         pass
 
     return optPlan[frozenset(relationIds)]
 
